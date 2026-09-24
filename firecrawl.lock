@@ -1,0 +1,5 @@
+# Pinned upstream Firecrawl baseline. scripts/fetch-firecrawl.sh reads this file.
+# Upgrading: change both values, re-run the fetch script, re-run `npm run test:e2e`.
+FIRECRAWL_REPO=https://github.com/firecrawl/firecrawl.git
+FIRECRAWL_TAG=v2.11.0
+FIRECRAWL_SHA=ef12eb36b2f3382838dfe0a0c1a5add3d5df7fe5

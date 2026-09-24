@@ -1,0 +1,13 @@
+node_modules/
+dist/
+.next/
+.env
+.env.local
+data/
+coverage/
+*.log
+.DS_Store
+# Upstream engine, fetched by scripts/fetch-firecrawl.sh at the version in firecrawl.lock
+/firecrawl/
+.local/
+output/

@@ -1,0 +1,67 @@
+@import "tailwindcss";
+
+@theme {
+  --font-sans: ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+  --font-mono: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", monospace;
+
+  --color-bg: #fafafa;
+  --color-panel: #ffffff;
+  --color-fg: #111111;
+  --color-muted: #6b6b6b;
+  --color-subtle: #f4f4f5;
+  --color-line: #e5e5e5;
+  --color-line-strong: #d4d4d4;
+  --color-accent: #2563eb;
+  --color-accent-hover: #1d4ed8;
+  --color-danger: #b91c1c;
+
+  --radius-sm: 3px;
+  --radius-md: 4px;
+
+  /* Dense type scale (px so it is independent of the root size). */
+  --text-xs: 11.5px;
+  --text-xs--line-height: 16px;
+  --text-sm: 13px;
+  --text-sm--line-height: 18px;
+  --text-base: 14px;
+  --text-base--line-height: 20px;
+  --text-lg: 16px;
+  --text-lg--line-height: 22px;
+  --text-xl: 19px;
+  --text-xl--line-height: 26px;
+}
+
+@layer base {
+  body {
+    background: var(--color-bg);
+    color: var(--color-fg);
+    font-family: var(--font-sans);
+    font-size: 13.5px;
+    line-height: 1.45;
+    -webkit-font-smoothing: antialiased;
+  }
+  a {
+    color: inherit;
+    text-decoration: none;
+  }
+  :focus-visible {
+    outline: 2px solid var(--color-accent);
+    outline-offset: 1px;
+  }
+  code,
+  pre,
+  kbd {
+    font-family: var(--font-mono);
+    font-size: 12.5px;
+  }
+}
+
+@layer components {
+  /* Text links: accent colour, underline on hover. */
+  .link {
+    color: var(--color-accent);
+  }
+  .link:hover {
+    text-decoration: underline;
+  }
+}

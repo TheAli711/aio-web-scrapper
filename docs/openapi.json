@@ -1,0 +1,3119 @@
+{
+  "openapi": "3.1.0",
+  "info": {
+    "title": "Web Scraper Public API",
+    "version": "1.0.0",
+    "description": "Authenticate with `Authorization: Bearer <API_KEY>`. Create keys in the dashboard under API keys. Jobs are asynchronous: create, poll `GET /api/v1/jobs/{id}`, then read results. Errors always have the shape `{ error: { code, message, details?, requestId } }`."
+  },
+  "components": {
+    "securitySchemes": {
+      "bearerAuth": {
+        "type": "http",
+        "scheme": "bearer",
+        "bearerFormat": "wsk_..."
+      }
+    },
+    "schemas": {}
+  },
+  "paths": {
+    "/api/v1/scrape": {
+      "post": {
+        "summary": "Scrape a single URL",
+        "tags": [
+          "jobs"
+        ],
+        "description": "Creates a scrape job. By default returns immediately (202) with status `queued`/`running`: poll `GET /jobs/{id}` until the status is terminal, then fetch `GET /jobs/{id}/results`. With `?wait=true` the request blocks until the page is done and returns 200 with the job and the page content inline (a failed scrape also returns 200, with `job.status = failed` and `job.error`).",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": [
+                  "url"
+                ],
+                "properties": {
+                  "url": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 2048,
+                    "description": "http(s) URL to fetch",
+                    "example": "https://example.com"
+                  },
+                  "project_id": {
+                    "type": "string",
+                    "format": "uuid",
+                    "description": "Project to file the job under. Default: your oldest project (\"Default project\")."
+                  },
+                  "formats": {
+                    "type": "array",
+                    "items": {
+                      "anyOf": [
+                        {
+                          "type": "string",
+                          "enum": [
+                            "markdown"
+                          ]
+                        },
+                        {
+                          "type": "string",
+                          "enum": [
+                            "html"
+                          ]
+                        },
+                        {
+                          "type": "string",
+                          "enum": [
+                            "text"
+                          ]
+                        }
+                      ]
+                    },
+                    "minItems": 1,
+                    "maxItems": 3,
+                    "uniqueItems": true,
+                    "description": "Default: [\"markdown\"]"
+                  },
+                  "only_main_content": {
+                    "type": "boolean",
+                    "description": "Strip nav/footer boilerplate. Default true."
+                  },
+                  "timeout_ms": {
+                    "type": "integer",
+                    "minimum": 1000,
+                    "description": "Per-page timeout. Default 30000; server max applies."
+                  },
+                  "wait_for_ms": {
+                    "type": "integer",
+                    "minimum": 0,
+                    "maximum": 30000,
+                    "description": "Extra wait after load (<= timeout/2)."
+                  }
+                },
+                "additionalProperties": false,
+                "title": "ScrapeRequest"
+              }
+            }
+          }
+        },
+        "parameters": [
+          {
+            "schema": {
+              "type": "boolean",
+              "default": false
+            },
+            "in": "query",
+            "name": "wait",
+            "required": false,
+            "description": "Block until the scrape finishes (up to timeout_ms + 30s) and return the job with the page content inline (HTTP 200). If it doesn't finish in time you get the usual 202 + job to poll."
+          }
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Returned by POST /scrape?wait=true when the job finished in time.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "job",
+                    "result"
+                  ],
+                  "properties": {
+                    "job": {
+                      "type": "object",
+                      "required": [
+                        "id",
+                        "project_id",
+                        "type",
+                        "target_url",
+                        "status",
+                        "source",
+                        "options",
+                        "progress",
+                        "error",
+                        "created_at",
+                        "started_at",
+                        "completed_at",
+                        "duration_ms",
+                        "links"
+                      ],
+                      "properties": {
+                        "id": {
+                          "type": "string",
+                          "format": "uuid"
+                        },
+                        "project_id": {
+                          "type": "string",
+                          "format": "uuid"
+                        },
+                        "type": {
+                          "anyOf": [
+                            {
+                              "type": "string",
+                              "enum": [
+                                "scrape"
+                              ]
+                            },
+                            {
+                              "type": "string",
+                              "enum": [
+                                "crawl"
+                              ]
+                            }
+                          ]
+                        },
+                        "target_url": {
+                          "type": "string"
+                        },
+                        "status": {
+                          "anyOf": [
+                            {
+                              "type": "string",
+                              "enum": [
+                                "queued"
+                              ]
+                            },
+                            {
+                              "type": "string",
+                              "enum": [
+                                "running"
+                              ]
+                            },
+                            {
+                              "type": "string",
+                              "enum": [
+                                "completed"
+                              ]
+                            },
+                            {
+                              "type": "string",
+                              "enum": [
+                                "failed"
+                              ]
+                            },
+                            {
+                              "type": "string",
+                              "enum": [
+                                "cancelled"
+                              ]
+                            }
+                          ],
+                          "description": "queued -> running -> completed | failed | cancelled"
+                        },
+                        "source": {
+                          "anyOf": [
+                            {
+                              "type": "string",
+                              "enum": [
+                                "dashboard"
+                              ]
+                            },
+                            {
+                              "type": "string",
+                              "enum": [
+                                "api"
+                              ]
+                            }
+                          ]
+                        },
+                        "options": {
+                          "type": "object",
+                          "additionalProperties": {}
+                        },
+                        "progress": {
+                          "type": "object",
+                          "required": [
+                            "pages_discovered",
+                            "pages_processed",
+                            "pages_succeeded",
+                            "pages_failed"
+                          ],
+                          "properties": {
+                            "pages_discovered": {
+                              "type": "integer"
+                            },
+                            "pages_processed": {
+                              "type": "integer"
+                            },
+                            "pages_succeeded": {
+                              "type": "integer"
+                            },
+                            "pages_failed": {
+                              "type": "integer"
+                            }
+                          }
+                        },
+                        "error": {
+                          "anyOf": [
+                            {
+                              "type": "object",
+                              "required": [
+                                "code",
+                                "message"
+                              ],
+                              "properties": {
+                                "code": {
+                                  "type": "string"
+                                },
+                                "message": {
+                                  "type": "string"
+                                }
+                              }
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        },
+                        "created_at": {
+                          "type": "string",
+                          "format": "date-time"
+                        },
+                        "started_at": {
+                          "anyOf": [
+                            {
+                              "type": "string",
+                              "format": "date-time"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        },
+                        "completed_at": {
+                          "anyOf": [
+                            {
+                              "type": "string",
+                              "format": "date-time"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        },
+                        "duration_ms": {
+                          "anyOf": [
+                            {
+                              "type": "integer"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        },
+                        "links": {
+                          "type": "object",
+                          "required": [
+                            "self",
+                            "results"
+                          ],
+                          "properties": {
+                            "self": {
+                              "type": "string"
+                            },
+                            "results": {
+                              "type": "string"
+                            }
+                          }
+                        }
+                      },
+                      "title": "Job"
+                    },
+                    "result": {
+                      "anyOf": [
+                        {
+                          "allOf": [
+                            {
+                              "type": "object",
+                              "required": [
+                                "id",
+                                "job_id",
+                                "project_id",
+                                "url",
+                                "title",
+                                "status_code",
+                                "success",
+                                "error",
+                                "formats",
+                                "content_bytes",
+                                "truncated",
+                                "links_count",
+                                "metadata",
+                                "created_at"
+                              ],
+                              "properties": {
+                                "id": {
+                                  "type": "string",
+                                  "format": "uuid"
+                                },
+                                "job_id": {
+                                  "type": "string",
+                                  "format": "uuid"
+                                },
+                                "project_id": {
+                                  "type": "string",
+                                  "format": "uuid"
+                                },
+                                "url": {
+                                  "type": "string"
+                                },
+                                "title": {
+                                  "anyOf": [
+                                    {
+                                      "type": "string"
+                                    },
+                                    {
+                                      "type": "null"
+                                    }
+                                  ]
+                                },
+                                "status_code": {
+                                  "anyOf": [
+                                    {
+                                      "type": "integer"
+                                    },
+                                    {
+                                      "type": "null"
+                                    }
+                                  ]
+                                },
+                                "success": {
+                                  "type": "boolean"
+                                },
+                                "error": {
+                                  "anyOf": [
+                                    {
+                                      "type": "object",
+                                      "required": [
+                                        "code",
+                                        "message"
+                                      ],
+                                      "properties": {
+                                        "code": {
+                                          "type": "string"
+                                        },
+                                        "message": {
+                                          "type": "string"
+                                        }
+                                      }
+                                    },
+                                    {
+                                      "type": "null"
+                                    }
+                                  ]
+                                },
+                                "formats": {
+                                  "type": "array",
+                                  "items": {
+                                    "type": "string"
+                                  }
+                                },
+                                "content_bytes": {
+                                  "type": "integer"
+                                },
+                                "truncated": {
+                                  "type": "boolean"
+                                },
+                                "links_count": {
+                                  "type": "integer"
+                                },
+                                "metadata": {
+                                  "type": "object",
+                                  "additionalProperties": {}
+                                },
+                                "created_at": {
+                                  "type": "string",
+                                  "format": "date-time"
+                                }
+                              },
+                              "title": "ResultSummary"
+                            },
+                            {
+                              "type": "object",
+                              "required": [
+                                "content"
+                              ],
+                              "properties": {
+                                "content": {
+                                  "anyOf": [
+                                    {
+                                      "type": "object",
+                                      "properties": {
+                                        "markdown": {
+                                          "type": "string"
+                                        },
+                                        "html": {
+                                          "type": "string"
+                                        },
+                                        "text": {
+                                          "type": "string"
+                                        },
+                                        "links": {
+                                          "type": "array",
+                                          "items": {
+                                            "type": "string"
+                                          }
+                                        }
+                                      }
+                                    },
+                                    {
+                                      "type": "null"
+                                    }
+                                  ]
+                                }
+                              }
+                            }
+                          ],
+                          "title": "Result"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    }
+                  },
+                  "title": "ScrapeSyncResponse",
+                  "description": "Returned by POST /scrape?wait=true when the job finished in time."
+                }
+              }
+            }
+          },
+          "202": {
+            "description": "Default Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "id",
+                    "project_id",
+                    "type",
+                    "target_url",
+                    "status",
+                    "source",
+                    "options",
+                    "progress",
+                    "error",
+                    "created_at",
+                    "started_at",
+                    "completed_at",
+                    "duration_ms",
+                    "links"
+                  ],
+                  "properties": {
+                    "id": {
+                      "type": "string",
+                      "format": "uuid"
+                    },
+                    "project_id": {
+                      "type": "string",
+                      "format": "uuid"
+                    },
+                    "type": {
+                      "anyOf": [
+                        {
+                          "type": "string",
+                          "enum": [
+                            "scrape"
+                          ]
+                        },
+                        {
+                          "type": "string",
+                          "enum": [
+                            "crawl"
+                          ]
+                        }
+                      ]
+                    },
+                    "target_url": {
+                      "type": "string"
+                    },
+                    "status": {
+                      "anyOf": [
+                        {
+                          "type": "string",
+                          "enum": [
+                            "queued"
+                          ]
+                        },
+                        {
+                          "type": "string",
+                          "enum": [
+                            "running"
+                          ]
+                        },
+                        {
+                          "type": "string",
+                          "enum": [
+                            "completed"
+                          ]
+                        },
+                        {
+                          "type": "string",
+                          "enum": [
+                            "failed"
+                          ]
+                        },
+                        {
+                          "type": "string",
+                          "enum": [
+                            "cancelled"
+                          ]
+                        }
+                      ],
+                      "description": "queued -> running -> completed | failed | cancelled"
+                    },
+                    "source": {
+                      "anyOf": [
+                        {
+                          "type": "string",
+                          "enum": [
+                            "dashboard"
+                          ]
+                        },
+                        {
+                          "type": "string",
+                          "enum": [
+                            "api"
+                          ]
+                        }
+                      ]
+                    },
+                    "options": {
+                      "type": "object",
+                      "additionalProperties": {}
+                    },
+                    "progress": {
+                      "type": "object",
+                      "required": [
+                        "pages_discovered",
+                        "pages_processed",
+                        "pages_succeeded",
+                        "pages_failed"
+                      ],
+                      "properties": {
+                        "pages_discovered": {
+                          "type": "integer"
+                        },
+                        "pages_processed": {
+                          "type": "integer"
+                        },
+                        "pages_succeeded": {
+                          "type": "integer"
+                        },
+                        "pages_failed": {
+                          "type": "integer"
+                        }
+                      }
+                    },
+                    "error": {
+                      "anyOf": [
+                        {
+                          "type": "object",
+                          "required": [
+                            "code",
+                            "message"
+                          ],
+                          "properties": {
+                            "code": {
+                              "type": "string"
+                            },
+                            "message": {
+                              "type": "string"
+                            }
+                          }
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
+                    "created_at": {
+                      "type": "string",
+                      "format": "date-time"
+                    },
+                    "started_at": {
+                      "anyOf": [
+                        {
+                          "type": "string",
+                          "format": "date-time"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
+                    "completed_at": {
+                      "anyOf": [
+                        {
+                          "type": "string",
+                          "format": "date-time"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
+                    "duration_ms": {
+                      "anyOf": [
+                        {
+                          "type": "integer"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
+                    "links": {
+                      "type": "object",
+                      "required": [
+                        "self",
+                        "results"
+                      ],
+                      "properties": {
+                        "self": {
+                          "type": "string"
+                        },
+                        "results": {
+                          "type": "string"
+                        }
+                      }
+                    }
+                  },
+                  "title": "Job"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Default Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "error"
+                  ],
+                  "properties": {
+                    "error": {
+                      "type": "object",
+                      "required": [
+                        "code",
+                        "message",
+                        "requestId"
+                      ],
+                      "properties": {
+                        "code": {
+                          "type": "string",
+                          "description": "Stable machine-readable error code",
+                          "example": "INVALID_URL"
+                        },
+                        "message": {
+                          "type": "string"
+                        },
+                        "details": {
+                          "type": "object",
+                          "additionalProperties": {}
+                        },
+                        "requestId": {
+                          "type": "string"
+                        }
+                      }
+                    }
+                  },
+                  "title": "Error"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Default Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "error"
+                  ],
+                  "properties": {
+                    "error": {
+                      "type": "object",
+                      "required": [
+                        "code",
+                        "message",
+                        "requestId"
+                      ],
+                      "properties": {
+                        "code": {
+                          "type": "string",
+                          "description": "Stable machine-readable error code",
+                          "example": "INVALID_URL"
+                        },
+                        "message": {
+                          "type": "string"
+                        },
+                        "details": {
+                          "type": "object",
+                          "additionalProperties": {}
+                        },
+                        "requestId": {
+                          "type": "string"
+                        }
+                      }
+                    }
+                  },
+                  "title": "Error"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Default Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "error"
+                  ],
+                  "properties": {
+                    "error": {
+                      "type": "object",
+                      "required": [
+                        "code",
+                        "message",
+                        "requestId"
+                      ],
+                      "properties": {
+                        "code": {
+                          "type": "string",
+                          "description": "Stable machine-readable error code",
+                          "example": "INVALID_URL"
+                        },
+                        "message": {
+                          "type": "string"
+                        },
+                        "details": {
+                          "type": "object",
+                          "additionalProperties": {}
+                        },
+                        "requestId": {
+                          "type": "string"
+                        }
+                      }
+                    }
+                  },
+                  "title": "Error"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Default Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "error"
+                  ],
+                  "properties": {
+                    "error": {
+                      "type": "object",
+                      "required": [
+                        "code",
+                        "message",
+                        "requestId"
+                      ],
+                      "properties": {
+                        "code": {
+                          "type": "string",
+                          "description": "Stable machine-readable error code",
+                          "example": "INVALID_URL"
+                        },
+                        "message": {
+                          "type": "string"
+                        },
+                        "details": {
+                          "type": "object",
+                          "additionalProperties": {}
+                        },
+                        "requestId": {
+                          "type": "string"
+                        }
+                      }
+                    }
+                  },
+                  "title": "Error"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Default Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "error"
+                  ],
+                  "properties": {
+                    "error": {
+                      "type": "object",
+                      "required": [
+                        "code",
+                        "message",
+                        "requestId"
+                      ],
+                      "properties": {
+                        "code": {
+                          "type": "string",
+                          "description": "Stable machine-readable error code",
+                          "example": "INVALID_URL"
+                        },
+                        "message": {
+                          "type": "string"
+                        },
+                        "details": {
+                          "type": "object",
+                          "additionalProperties": {}
+                        },
+                        "requestId": {
+                          "type": "string"
+                        }
+                      }
+                    }
+                  },
+                  "title": "Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/crawl": {
+      "post": {
+        "summary": "Crawl a website",
+        "tags": [
+          "jobs"
+        ],
+        "description": "Starts an asynchronous crawl. Progress and page counts are reported on the job; pages appear under `/jobs/{id}/results` as they complete.",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": [
+                  "url"
+                ],
+                "properties": {
+                  "url": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 2048,
+                    "description": "http(s) URL to fetch",
+                    "example": "https://example.com"
+                  },
+                  "project_id": {
+                    "type": "string",
+                    "format": "uuid",
+                    "description": "Project to file the job under. Default: your oldest project (\"Default project\")."
+                  },
+                  "formats": {
+                    "type": "array",
+                    "items": {
+                      "anyOf": [
+                        {
+                          "type": "string",
+                          "enum": [
+                            "markdown"
+                          ]
+                        },
+                        {
+                          "type": "string",
+                          "enum": [
+                            "html"
+                          ]
+                        },
+                        {
+                          "type": "string",
+                          "enum": [
+                            "text"
+                          ]
+                        }
+                      ]
+                    },
+                    "minItems": 1,
+                    "maxItems": 3,
+                    "uniqueItems": true,
+                    "description": "Default: [\"markdown\"]"
+                  },
+                  "only_main_content": {
+                    "type": "boolean",
+                    "description": "Strip nav/footer boilerplate. Default true."
+                  },
+                  "timeout_ms": {
+                    "type": "integer",
+                    "minimum": 1000,
+                    "description": "Per-page timeout. Default 30000; server max applies."
+                  },
+                  "wait_for_ms": {
+                    "type": "integer",
+                    "minimum": 0,
+                    "maximum": 30000,
+                    "description": "Extra wait after load (<= timeout/2)."
+                  },
+                  "max_depth": {
+                    "type": "integer",
+                    "minimum": 0,
+                    "description": "Link depth from the start URL. Default 3."
+                  },
+                  "max_pages": {
+                    "type": "integer",
+                    "minimum": 1,
+                    "description": "Maximum pages to fetch. Default 50."
+                  },
+                  "include_patterns": {
+                    "type": "array",
+                    "items": {
+                      "type": "string",
+                      "maxLength": 200
+                    },
+                    "maxItems": 20,
+                    "description": "Regexes matched against the URL path; only matching pages are crawled."
+                  },
+                  "exclude_patterns": {
+                    "type": "array",
+                    "items": {
+                      "type": "string",
+                      "maxLength": 200
+                    },
+                    "maxItems": 20,
+                    "description": "Regexes matched against the URL path; matching pages are skipped."
+                  },
+                  "allowed_domain": {
+                    "type": "string",
+                    "maxLength": 253,
+                    "description": "Confine the crawl to this domain (start host or a parent of it). Default: start host."
+                  },
+                  "allow_subdomains": {
+                    "type": "boolean",
+                    "description": "Also follow links to subdomains of allowed_domain. Default false."
+                  }
+                },
+                "additionalProperties": false,
+                "title": "CrawlRequest"
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "responses": {
+          "202": {
+            "description": "Default Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "id",
+                    "project_id",
+                    "type",
+                    "target_url",
+                    "status",
+                    "source",
+                    "options",
+                    "progress",
+                    "error",
+                    "created_at",
+                    "started_at",
+                    "completed_at",
+                    "duration_ms",
+                    "links"
+                  ],
+                  "properties": {
+                    "id": {
+                      "type": "string",
+                      "format": "uuid"
+                    },
+                    "project_id": {
+                      "type": "string",
+                      "format": "uuid"
+                    },
+                    "type": {
+                      "anyOf": [
+                        {
+                          "type": "string",
+                          "enum": [
+                            "scrape"
+                          ]
+                        },
+                        {
+                          "type": "string",
+                          "enum": [
+                            "crawl"
+                          ]
+                        }
+                      ]
+                    },
+                    "target_url": {
+                      "type": "string"
+                    },
+                    "status": {
+                      "anyOf": [
+                        {
+                          "type": "string",
+                          "enum": [
+                            "queued"
+                          ]
+                        },
+                        {
+                          "type": "string",
+                          "enum": [
+                            "running"
+                          ]
+                        },
+                        {
+                          "type": "string",
+                          "enum": [
+                            "completed"
+                          ]
+                        },
+                        {
+                          "type": "string",
+                          "enum": [
+                            "failed"
+                          ]
+                        },
+                        {
+                          "type": "string",
+                          "enum": [
+                            "cancelled"
+                          ]
+                        }
+                      ],
+                      "description": "queued -> running -> completed | failed | cancelled"
+                    },
+                    "source": {
+                      "anyOf": [
+                        {
+                          "type": "string",
+                          "enum": [
+                            "dashboard"
+                          ]
+                        },
+                        {
+                          "type": "string",
+                          "enum": [
+                            "api"
+                          ]
+                        }
+                      ]
+                    },
+                    "options": {
+                      "type": "object",
+                      "additionalProperties": {}
+                    },
+                    "progress": {
+                      "type": "object",
+                      "required": [
+                        "pages_discovered",
+                        "pages_processed",
+                        "pages_succeeded",
+                        "pages_failed"
+                      ],
+                      "properties": {
+                        "pages_discovered": {
+                          "type": "integer"
+                        },
+                        "pages_processed": {
+                          "type": "integer"
+                        },
+                        "pages_succeeded": {
+                          "type": "integer"
+                        },
+                        "pages_failed": {
+                          "type": "integer"
+                        }
+                      }
+                    },
+                    "error": {
+                      "anyOf": [
+                        {
+                          "type": "object",
+                          "required": [
+                            "code",
+                            "message"
+                          ],
+                          "properties": {
+                            "code": {
+                              "type": "string"
+                            },
+                            "message": {
+                              "type": "string"
+                            }
+                          }
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
+                    "created_at": {
+                      "type": "string",
+                      "format": "date-time"
+                    },
+                    "started_at": {
+                      "anyOf": [
+                        {
+                          "type": "string",
+                          "format": "date-time"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
+                    "completed_at": {
+                      "anyOf": [
+                        {
+                          "type": "string",
+                          "format": "date-time"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
+                    "duration_ms": {
+                      "anyOf": [
+                        {
+                          "type": "integer"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
+                    "links": {
+                      "type": "object",
+                      "required": [
+                        "self",
+                        "results"
+                      ],
+                      "properties": {
+                        "self": {
+                          "type": "string"
+                        },
+                        "results": {
+                          "type": "string"
+                        }
+                      }
+                    }
+                  },
+                  "title": "Job"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Default Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "error"
+                  ],
+                  "properties": {
+                    "error": {
+                      "type": "object",
+                      "required": [
+                        "code",
+                        "message",
+                        "requestId"
+                      ],
+                      "properties": {
+                        "code": {
+                          "type": "string",
+                          "description": "Stable machine-readable error code",
+                          "example": "INVALID_URL"
+                        },
+                        "message": {
+                          "type": "string"
+                        },
+                        "details": {
+                          "type": "object",
+                          "additionalProperties": {}
+                        },
+                        "requestId": {
+                          "type": "string"
+                        }
+                      }
+                    }
+                  },
+                  "title": "Error"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Default Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "error"
+                  ],
+                  "properties": {
+                    "error": {
+                      "type": "object",
+                      "required": [
+                        "code",
+                        "message",
+                        "requestId"
+                      ],
+                      "properties": {
+                        "code": {
+                          "type": "string",
+                          "description": "Stable machine-readable error code",
+                          "example": "INVALID_URL"
+                        },
+                        "message": {
+                          "type": "string"
+                        },
+                        "details": {
+                          "type": "object",
+                          "additionalProperties": {}
+                        },
+                        "requestId": {
+                          "type": "string"
+                        }
+                      }
+                    }
+                  },
+                  "title": "Error"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Default Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "error"
+                  ],
+                  "properties": {
+                    "error": {
+                      "type": "object",
+                      "required": [
+                        "code",
+                        "message",
+                        "requestId"
+                      ],
+                      "properties": {
+                        "code": {
+                          "type": "string",
+                          "description": "Stable machine-readable error code",
+                          "example": "INVALID_URL"
+                        },
+                        "message": {
+                          "type": "string"
+                        },
+                        "details": {
+                          "type": "object",
+                          "additionalProperties": {}
+                        },
+                        "requestId": {
+                          "type": "string"
+                        }
+                      }
+                    }
+                  },
+                  "title": "Error"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Default Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "error"
+                  ],
+                  "properties": {
+                    "error": {
+                      "type": "object",
+                      "required": [
+                        "code",
+                        "message",
+                        "requestId"
+                      ],
+                      "properties": {
+                        "code": {
+                          "type": "string",
+                          "description": "Stable machine-readable error code",
+                          "example": "INVALID_URL"
+                        },
+                        "message": {
+                          "type": "string"
+                        },
+                        "details": {
+                          "type": "object",
+                          "additionalProperties": {}
+                        },
+                        "requestId": {
+                          "type": "string"
+                        }
+                      }
+                    }
+                  },
+                  "title": "Error"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Default Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "error"
+                  ],
+                  "properties": {
+                    "error": {
+                      "type": "object",
+                      "required": [
+                        "code",
+                        "message",
+                        "requestId"
+                      ],
+                      "properties": {
+                        "code": {
+                          "type": "string",
+                          "description": "Stable machine-readable error code",
+                          "example": "INVALID_URL"
+                        },
+                        "message": {
+                          "type": "string"
+                        },
+                        "details": {
+                          "type": "object",
+                          "additionalProperties": {}
+                        },
+                        "requestId": {
+                          "type": "string"
+                        }
+                      }
+                    }
+                  },
+                  "title": "Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/jobs": {
+      "get": {
+        "summary": "List jobs",
+        "tags": [
+          "jobs"
+        ],
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "in": "query",
+            "name": "project_id",
+            "required": false
+          },
+          {
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "enum": [
+                    "queued"
+                  ]
+                },
+                {
+                  "type": "string",
+                  "enum": [
+                    "running"
+                  ]
+                },
+                {
+                  "type": "string",
+                  "enum": [
+                    "completed"
+                  ]
+                },
+                {
+                  "type": "string",
+                  "enum": [
+                    "failed"
+                  ]
+                },
+                {
+                  "type": "string",
+                  "enum": [
+                    "cancelled"
+                  ]
+                }
+              ]
+            },
+            "in": "query",
+            "name": "status",
+            "required": false,
+            "description": "queued -> running -> completed | failed | cancelled"
+          },
+          {
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "enum": [
+                    "scrape"
+                  ]
+                },
+                {
+                  "type": "string",
+                  "enum": [
+                    "crawl"
+                  ]
+                }
+              ]
+            },
+            "in": "query",
+            "name": "type",
+            "required": false
+          },
+          {
+            "schema": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 100,
+              "default": 50
+            },
+            "in": "query",
+            "name": "limit",
+            "required": false
+          },
+          {
+            "schema": {
+              "type": "string",
+              "format": "date-time"
+            },
+            "in": "query",
+            "name": "before",
+            "required": false
+          }
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Default Response"
+          }
+        }
+      }
+    },
+    "/api/v1/jobs/{id}": {
+      "get": {
+        "summary": "Get job status",
+        "tags": [
+          "jobs"
+        ],
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "in": "path",
+            "name": "id",
+            "required": true
+          }
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Default Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "id",
+                    "project_id",
+                    "type",
+                    "target_url",
+                    "status",
+                    "source",
+                    "options",
+                    "progress",
+                    "error",
+                    "created_at",
+                    "started_at",
+                    "completed_at",
+                    "duration_ms",
+                    "links"
+                  ],
+                  "properties": {
+                    "id": {
+                      "type": "string",
+                      "format": "uuid"
+                    },
+                    "project_id": {
+                      "type": "string",
+                      "format": "uuid"
+                    },
+                    "type": {
+                      "anyOf": [
+                        {
+                          "type": "string",
+                          "enum": [
+                            "scrape"
+                          ]
+                        },
+                        {
+                          "type": "string",
+                          "enum": [
+                            "crawl"
+                          ]
+                        }
+                      ]
+                    },
+                    "target_url": {
+                      "type": "string"
+                    },
+                    "status": {
+                      "anyOf": [
+                        {
+                          "type": "string",
+                          "enum": [
+                            "queued"
+                          ]
+                        },
+                        {
+                          "type": "string",
+                          "enum": [
+                            "running"
+                          ]
+                        },
+                        {
+                          "type": "string",
+                          "enum": [
+                            "completed"
+                          ]
+                        },
+                        {
+                          "type": "string",
+                          "enum": [
+                            "failed"
+                          ]
+                        },
+                        {
+                          "type": "string",
+                          "enum": [
+                            "cancelled"
+                          ]
+                        }
+                      ],
+                      "description": "queued -> running -> completed | failed | cancelled"
+                    },
+                    "source": {
+                      "anyOf": [
+                        {
+                          "type": "string",
+                          "enum": [
+                            "dashboard"
+                          ]
+                        },
+                        {
+                          "type": "string",
+                          "enum": [
+                            "api"
+                          ]
+                        }
+                      ]
+                    },
+                    "options": {
+                      "type": "object",
+                      "additionalProperties": {}
+                    },
+                    "progress": {
+                      "type": "object",
+                      "required": [
+                        "pages_discovered",
+                        "pages_processed",
+                        "pages_succeeded",
+                        "pages_failed"
+                      ],
+                      "properties": {
+                        "pages_discovered": {
+                          "type": "integer"
+                        },
+                        "pages_processed": {
+                          "type": "integer"
+                        },
+                        "pages_succeeded": {
+                          "type": "integer"
+                        },
+                        "pages_failed": {
+                          "type": "integer"
+                        }
+                      }
+                    },
+                    "error": {
+                      "anyOf": [
+                        {
+                          "type": "object",
+                          "required": [
+                            "code",
+                            "message"
+                          ],
+                          "properties": {
+                            "code": {
+                              "type": "string"
+                            },
+                            "message": {
+                              "type": "string"
+                            }
+                          }
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
+                    "created_at": {
+                      "type": "string",
+                      "format": "date-time"
+                    },
+                    "started_at": {
+                      "anyOf": [
+                        {
+                          "type": "string",
+                          "format": "date-time"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
+                    "completed_at": {
+                      "anyOf": [
+                        {
+                          "type": "string",
+                          "format": "date-time"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
+                    "duration_ms": {
+                      "anyOf": [
+                        {
+                          "type": "integer"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
+                    "links": {
+                      "type": "object",
+                      "required": [
+                        "self",
+                        "results"
+                      ],
+                      "properties": {
+                        "self": {
+                          "type": "string"
+                        },
+                        "results": {
+                          "type": "string"
+                        }
+                      }
+                    }
+                  },
+                  "title": "Job"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Default Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "error"
+                  ],
+                  "properties": {
+                    "error": {
+                      "type": "object",
+                      "required": [
+                        "code",
+                        "message",
+                        "requestId"
+                      ],
+                      "properties": {
+                        "code": {
+                          "type": "string",
+                          "description": "Stable machine-readable error code",
+                          "example": "INVALID_URL"
+                        },
+                        "message": {
+                          "type": "string"
+                        },
+                        "details": {
+                          "type": "object",
+                          "additionalProperties": {}
+                        },
+                        "requestId": {
+                          "type": "string"
+                        }
+                      }
+                    }
+                  },
+                  "title": "Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/jobs/{id}/cancel": {
+      "post": {
+        "summary": "Cancel a queued or running job",
+        "tags": [
+          "jobs"
+        ],
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "in": "path",
+            "name": "id",
+            "required": true
+          }
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Default Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "id",
+                    "project_id",
+                    "type",
+                    "target_url",
+                    "status",
+                    "source",
+                    "options",
+                    "progress",
+                    "error",
+                    "created_at",
+                    "started_at",
+                    "completed_at",
+                    "duration_ms",
+                    "links"
+                  ],
+                  "properties": {
+                    "id": {
+                      "type": "string",
+                      "format": "uuid"
+                    },
+                    "project_id": {
+                      "type": "string",
+                      "format": "uuid"
+                    },
+                    "type": {
+                      "anyOf": [
+                        {
+                          "type": "string",
+                          "enum": [
+                            "scrape"
+                          ]
+                        },
+                        {
+                          "type": "string",
+                          "enum": [
+                            "crawl"
+                          ]
+                        }
+                      ]
+                    },
+                    "target_url": {
+                      "type": "string"
+                    },
+                    "status": {
+                      "anyOf": [
+                        {
+                          "type": "string",
+                          "enum": [
+                            "queued"
+                          ]
+                        },
+                        {
+                          "type": "string",
+                          "enum": [
+                            "running"
+                          ]
+                        },
+                        {
+                          "type": "string",
+                          "enum": [
+                            "completed"
+                          ]
+                        },
+                        {
+                          "type": "string",
+                          "enum": [
+                            "failed"
+                          ]
+                        },
+                        {
+                          "type": "string",
+                          "enum": [
+                            "cancelled"
+                          ]
+                        }
+                      ],
+                      "description": "queued -> running -> completed | failed | cancelled"
+                    },
+                    "source": {
+                      "anyOf": [
+                        {
+                          "type": "string",
+                          "enum": [
+                            "dashboard"
+                          ]
+                        },
+                        {
+                          "type": "string",
+                          "enum": [
+                            "api"
+                          ]
+                        }
+                      ]
+                    },
+                    "options": {
+                      "type": "object",
+                      "additionalProperties": {}
+                    },
+                    "progress": {
+                      "type": "object",
+                      "required": [
+                        "pages_discovered",
+                        "pages_processed",
+                        "pages_succeeded",
+                        "pages_failed"
+                      ],
+                      "properties": {
+                        "pages_discovered": {
+                          "type": "integer"
+                        },
+                        "pages_processed": {
+                          "type": "integer"
+                        },
+                        "pages_succeeded": {
+                          "type": "integer"
+                        },
+                        "pages_failed": {
+                          "type": "integer"
+                        }
+                      }
+                    },
+                    "error": {
+                      "anyOf": [
+                        {
+                          "type": "object",
+                          "required": [
+                            "code",
+                            "message"
+                          ],
+                          "properties": {
+                            "code": {
+                              "type": "string"
+                            },
+                            "message": {
+                              "type": "string"
+                            }
+                          }
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
+                    "created_at": {
+                      "type": "string",
+                      "format": "date-time"
+                    },
+                    "started_at": {
+                      "anyOf": [
+                        {
+                          "type": "string",
+                          "format": "date-time"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
+                    "completed_at": {
+                      "anyOf": [
+                        {
+                          "type": "string",
+                          "format": "date-time"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
+                    "duration_ms": {
+                      "anyOf": [
+                        {
+                          "type": "integer"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
+                    "links": {
+                      "type": "object",
+                      "required": [
+                        "self",
+                        "results"
+                      ],
+                      "properties": {
+                        "self": {
+                          "type": "string"
+                        },
+                        "results": {
+                          "type": "string"
+                        }
+                      }
+                    }
+                  },
+                  "title": "Job"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Default Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "error"
+                  ],
+                  "properties": {
+                    "error": {
+                      "type": "object",
+                      "required": [
+                        "code",
+                        "message",
+                        "requestId"
+                      ],
+                      "properties": {
+                        "code": {
+                          "type": "string",
+                          "description": "Stable machine-readable error code",
+                          "example": "INVALID_URL"
+                        },
+                        "message": {
+                          "type": "string"
+                        },
+                        "details": {
+                          "type": "object",
+                          "additionalProperties": {}
+                        },
+                        "requestId": {
+                          "type": "string"
+                        }
+                      }
+                    }
+                  },
+                  "title": "Error"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Default Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "error"
+                  ],
+                  "properties": {
+                    "error": {
+                      "type": "object",
+                      "required": [
+                        "code",
+                        "message",
+                        "requestId"
+                      ],
+                      "properties": {
+                        "code": {
+                          "type": "string",
+                          "description": "Stable machine-readable error code",
+                          "example": "INVALID_URL"
+                        },
+                        "message": {
+                          "type": "string"
+                        },
+                        "details": {
+                          "type": "object",
+                          "additionalProperties": {}
+                        },
+                        "requestId": {
+                          "type": "string"
+                        }
+                      }
+                    }
+                  },
+                  "title": "Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/jobs/{id}/results": {
+      "get": {
+        "summary": "List a job's results",
+        "tags": [
+          "jobs"
+        ],
+        "description": "Paginated page results. Failed pages are included with `success: false` and an `error`. Set `include_content=true` to inline markdown/html/text.",
+        "parameters": [
+          {
+            "schema": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 100,
+              "default": 20
+            },
+            "in": "query",
+            "name": "limit",
+            "required": false
+          },
+          {
+            "schema": {
+              "type": "integer",
+              "minimum": 0,
+              "default": 0
+            },
+            "in": "query",
+            "name": "offset",
+            "required": false
+          },
+          {
+            "schema": {
+              "type": "boolean"
+            },
+            "in": "query",
+            "name": "success",
+            "required": false
+          },
+          {
+            "schema": {
+              "type": "boolean",
+              "default": false
+            },
+            "in": "query",
+            "name": "include_content",
+            "required": false,
+            "description": "Inline page content (markdown/html/text/links)."
+          },
+          {
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "in": "path",
+            "name": "id",
+            "required": true
+          }
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Default Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "job",
+                    "data",
+                    "pagination"
+                  ],
+                  "properties": {
+                    "job": {
+                      "type": "object",
+                      "required": [
+                        "id",
+                        "project_id",
+                        "type",
+                        "target_url",
+                        "status",
+                        "source",
+                        "options",
+                        "progress",
+                        "error",
+                        "created_at",
+                        "started_at",
+                        "completed_at",
+                        "duration_ms",
+                        "links"
+                      ],
+                      "properties": {
+                        "id": {
+                          "type": "string",
+                          "format": "uuid"
+                        },
+                        "project_id": {
+                          "type": "string",
+                          "format": "uuid"
+                        },
+                        "type": {
+                          "anyOf": [
+                            {
+                              "type": "string",
+                              "enum": [
+                                "scrape"
+                              ]
+                            },
+                            {
+                              "type": "string",
+                              "enum": [
+                                "crawl"
+                              ]
+                            }
+                          ]
+                        },
+                        "target_url": {
+                          "type": "string"
+                        },
+                        "status": {
+                          "anyOf": [
+                            {
+                              "type": "string",
+                              "enum": [
+                                "queued"
+                              ]
+                            },
+                            {
+                              "type": "string",
+                              "enum": [
+                                "running"
+                              ]
+                            },
+                            {
+                              "type": "string",
+                              "enum": [
+                                "completed"
+                              ]
+                            },
+                            {
+                              "type": "string",
+                              "enum": [
+                                "failed"
+                              ]
+                            },
+                            {
+                              "type": "string",
+                              "enum": [
+                                "cancelled"
+                              ]
+                            }
+                          ],
+                          "description": "queued -> running -> completed | failed | cancelled"
+                        },
+                        "source": {
+                          "anyOf": [
+                            {
+                              "type": "string",
+                              "enum": [
+                                "dashboard"
+                              ]
+                            },
+                            {
+                              "type": "string",
+                              "enum": [
+                                "api"
+                              ]
+                            }
+                          ]
+                        },
+                        "options": {
+                          "type": "object",
+                          "additionalProperties": {}
+                        },
+                        "progress": {
+                          "type": "object",
+                          "required": [
+                            "pages_discovered",
+                            "pages_processed",
+                            "pages_succeeded",
+                            "pages_failed"
+                          ],
+                          "properties": {
+                            "pages_discovered": {
+                              "type": "integer"
+                            },
+                            "pages_processed": {
+                              "type": "integer"
+                            },
+                            "pages_succeeded": {
+                              "type": "integer"
+                            },
+                            "pages_failed": {
+                              "type": "integer"
+                            }
+                          }
+                        },
+                        "error": {
+                          "anyOf": [
+                            {
+                              "type": "object",
+                              "required": [
+                                "code",
+                                "message"
+                              ],
+                              "properties": {
+                                "code": {
+                                  "type": "string"
+                                },
+                                "message": {
+                                  "type": "string"
+                                }
+                              }
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        },
+                        "created_at": {
+                          "type": "string",
+                          "format": "date-time"
+                        },
+                        "started_at": {
+                          "anyOf": [
+                            {
+                              "type": "string",
+                              "format": "date-time"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        },
+                        "completed_at": {
+                          "anyOf": [
+                            {
+                              "type": "string",
+                              "format": "date-time"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        },
+                        "duration_ms": {
+                          "anyOf": [
+                            {
+                              "type": "integer"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        },
+                        "links": {
+                          "type": "object",
+                          "required": [
+                            "self",
+                            "results"
+                          ],
+                          "properties": {
+                            "self": {
+                              "type": "string"
+                            },
+                            "results": {
+                              "type": "string"
+                            }
+                          }
+                        }
+                      },
+                      "title": "Job"
+                    },
+                    "data": {
+                      "type": "array",
+                      "items": {
+                        "anyOf": [
+                          {
+                            "allOf": [
+                              {
+                                "type": "object",
+                                "required": [
+                                  "id",
+                                  "job_id",
+                                  "project_id",
+                                  "url",
+                                  "title",
+                                  "status_code",
+                                  "success",
+                                  "error",
+                                  "formats",
+                                  "content_bytes",
+                                  "truncated",
+                                  "links_count",
+                                  "metadata",
+                                  "created_at"
+                                ],
+                                "properties": {
+                                  "id": {
+                                    "type": "string",
+                                    "format": "uuid"
+                                  },
+                                  "job_id": {
+                                    "type": "string",
+                                    "format": "uuid"
+                                  },
+                                  "project_id": {
+                                    "type": "string",
+                                    "format": "uuid"
+                                  },
+                                  "url": {
+                                    "type": "string"
+                                  },
+                                  "title": {
+                                    "anyOf": [
+                                      {
+                                        "type": "string"
+                                      },
+                                      {
+                                        "type": "null"
+                                      }
+                                    ]
+                                  },
+                                  "status_code": {
+                                    "anyOf": [
+                                      {
+                                        "type": "integer"
+                                      },
+                                      {
+                                        "type": "null"
+                                      }
+                                    ]
+                                  },
+                                  "success": {
+                                    "type": "boolean"
+                                  },
+                                  "error": {
+                                    "anyOf": [
+                                      {
+                                        "type": "object",
+                                        "required": [
+                                          "code",
+                                          "message"
+                                        ],
+                                        "properties": {
+                                          "code": {
+                                            "type": "string"
+                                          },
+                                          "message": {
+                                            "type": "string"
+                                          }
+                                        }
+                                      },
+                                      {
+                                        "type": "null"
+                                      }
+                                    ]
+                                  },
+                                  "formats": {
+                                    "type": "array",
+                                    "items": {
+                                      "type": "string"
+                                    }
+                                  },
+                                  "content_bytes": {
+                                    "type": "integer"
+                                  },
+                                  "truncated": {
+                                    "type": "boolean"
+                                  },
+                                  "links_count": {
+                                    "type": "integer"
+                                  },
+                                  "metadata": {
+                                    "type": "object",
+                                    "additionalProperties": {}
+                                  },
+                                  "created_at": {
+                                    "type": "string",
+                                    "format": "date-time"
+                                  }
+                                },
+                                "title": "ResultSummary"
+                              },
+                              {
+                                "type": "object",
+                                "required": [
+                                  "content"
+                                ],
+                                "properties": {
+                                  "content": {
+                                    "anyOf": [
+                                      {
+                                        "type": "object",
+                                        "properties": {
+                                          "markdown": {
+                                            "type": "string"
+                                          },
+                                          "html": {
+                                            "type": "string"
+                                          },
+                                          "text": {
+                                            "type": "string"
+                                          },
+                                          "links": {
+                                            "type": "array",
+                                            "items": {
+                                              "type": "string"
+                                            }
+                                          }
+                                        }
+                                      },
+                                      {
+                                        "type": "null"
+                                      }
+                                    ]
+                                  }
+                                }
+                              }
+                            ],
+                            "title": "Result"
+                          },
+                          {
+                            "type": "object",
+                            "required": [
+                              "id",
+                              "job_id",
+                              "project_id",
+                              "url",
+                              "title",
+                              "status_code",
+                              "success",
+                              "error",
+                              "formats",
+                              "content_bytes",
+                              "truncated",
+                              "links_count",
+                              "metadata",
+                              "created_at"
+                            ],
+                            "properties": {
+                              "id": {
+                                "type": "string",
+                                "format": "uuid"
+                              },
+                              "job_id": {
+                                "type": "string",
+                                "format": "uuid"
+                              },
+                              "project_id": {
+                                "type": "string",
+                                "format": "uuid"
+                              },
+                              "url": {
+                                "type": "string"
+                              },
+                              "title": {
+                                "anyOf": [
+                                  {
+                                    "type": "string"
+                                  },
+                                  {
+                                    "type": "null"
+                                  }
+                                ]
+                              },
+                              "status_code": {
+                                "anyOf": [
+                                  {
+                                    "type": "integer"
+                                  },
+                                  {
+                                    "type": "null"
+                                  }
+                                ]
+                              },
+                              "success": {
+                                "type": "boolean"
+                              },
+                              "error": {
+                                "anyOf": [
+                                  {
+                                    "type": "object",
+                                    "required": [
+                                      "code",
+                                      "message"
+                                    ],
+                                    "properties": {
+                                      "code": {
+                                        "type": "string"
+                                      },
+                                      "message": {
+                                        "type": "string"
+                                      }
+                                    }
+                                  },
+                                  {
+                                    "type": "null"
+                                  }
+                                ]
+                              },
+                              "formats": {
+                                "type": "array",
+                                "items": {
+                                  "type": "string"
+                                }
+                              },
+                              "content_bytes": {
+                                "type": "integer"
+                              },
+                              "truncated": {
+                                "type": "boolean"
+                              },
+                              "links_count": {
+                                "type": "integer"
+                              },
+                              "metadata": {
+                                "type": "object",
+                                "additionalProperties": {}
+                              },
+                              "created_at": {
+                                "type": "string",
+                                "format": "date-time"
+                              }
+                            },
+                            "title": "ResultSummary"
+                          }
+                        ]
+                      }
+                    },
+                    "pagination": {
+                      "type": "object",
+                      "required": [
+                        "total",
+                        "limit",
+                        "offset",
+                        "next_offset"
+                      ],
+                      "properties": {
+                        "total": {
+                          "type": "integer"
+                        },
+                        "limit": {
+                          "type": "integer"
+                        },
+                        "offset": {
+                          "type": "integer"
+                        },
+                        "next_offset": {
+                          "anyOf": [
+                            {
+                              "type": "integer"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        }
+                      }
+                    }
+                  },
+                  "title": "JobResultsPage"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Default Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "error"
+                  ],
+                  "properties": {
+                    "error": {
+                      "type": "object",
+                      "required": [
+                        "code",
+                        "message",
+                        "requestId"
+                      ],
+                      "properties": {
+                        "code": {
+                          "type": "string",
+                          "description": "Stable machine-readable error code",
+                          "example": "INVALID_URL"
+                        },
+                        "message": {
+                          "type": "string"
+                        },
+                        "details": {
+                          "type": "object",
+                          "additionalProperties": {}
+                        },
+                        "requestId": {
+                          "type": "string"
+                        }
+                      }
+                    }
+                  },
+                  "title": "Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/jobs/{id}/export": {
+      "get": {
+        "summary": "Download all results of a job",
+        "tags": [
+          "jobs"
+        ],
+        "description": "Streams every result with content, as JSON Lines (default) or a JSON array.",
+        "parameters": [
+          {
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "enum": [
+                    "jsonl"
+                  ]
+                },
+                {
+                  "type": "string",
+                  "enum": [
+                    "json"
+                  ]
+                }
+              ],
+              "default": "jsonl"
+            },
+            "in": "query",
+            "name": "format",
+            "required": false
+          },
+          {
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "in": "path",
+            "name": "id",
+            "required": true
+          }
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Default Response"
+          }
+        }
+      }
+    },
+    "/api/v1/results/{id}": {
+      "get": {
+        "summary": "Get one result with content",
+        "tags": [
+          "results"
+        ],
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "in": "path",
+            "name": "id",
+            "required": true
+          }
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Default Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "allOf": [
+                    {
+                      "type": "object",
+                      "required": [
+                        "id",
+                        "job_id",
+                        "project_id",
+                        "url",
+                        "title",
+                        "status_code",
+                        "success",
+                        "error",
+                        "formats",
+                        "content_bytes",
+                        "truncated",
+                        "links_count",
+                        "metadata",
+                        "created_at"
+                      ],
+                      "properties": {
+                        "id": {
+                          "type": "string",
+                          "format": "uuid"
+                        },
+                        "job_id": {
+                          "type": "string",
+                          "format": "uuid"
+                        },
+                        "project_id": {
+                          "type": "string",
+                          "format": "uuid"
+                        },
+                        "url": {
+                          "type": "string"
+                        },
+                        "title": {
+                          "anyOf": [
+                            {
+                              "type": "string"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        },
+                        "status_code": {
+                          "anyOf": [
+                            {
+                              "type": "integer"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        },
+                        "success": {
+                          "type": "boolean"
+                        },
+                        "error": {
+                          "anyOf": [
+                            {
+                              "type": "object",
+                              "required": [
+                                "code",
+                                "message"
+                              ],
+                              "properties": {
+                                "code": {
+                                  "type": "string"
+                                },
+                                "message": {
+                                  "type": "string"
+                                }
+                              }
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        },
+                        "formats": {
+                          "type": "array",
+                          "items": {
+                            "type": "string"
+                          }
+                        },
+                        "content_bytes": {
+                          "type": "integer"
+                        },
+                        "truncated": {
+                          "type": "boolean"
+                        },
+                        "links_count": {
+                          "type": "integer"
+                        },
+                        "metadata": {
+                          "type": "object",
+                          "additionalProperties": {}
+                        },
+                        "created_at": {
+                          "type": "string",
+                          "format": "date-time"
+                        }
+                      },
+                      "title": "ResultSummary"
+                    },
+                    {
+                      "type": "object",
+                      "required": [
+                        "content"
+                      ],
+                      "properties": {
+                        "content": {
+                          "anyOf": [
+                            {
+                              "type": "object",
+                              "properties": {
+                                "markdown": {
+                                  "type": "string"
+                                },
+                                "html": {
+                                  "type": "string"
+                                },
+                                "text": {
+                                  "type": "string"
+                                },
+                                "links": {
+                                  "type": "array",
+                                  "items": {
+                                    "type": "string"
+                                  }
+                                }
+                              }
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        }
+                      }
+                    }
+                  ],
+                  "title": "Result"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Default Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "error"
+                  ],
+                  "properties": {
+                    "error": {
+                      "type": "object",
+                      "required": [
+                        "code",
+                        "message",
+                        "requestId"
+                      ],
+                      "properties": {
+                        "code": {
+                          "type": "string",
+                          "description": "Stable machine-readable error code",
+                          "example": "INVALID_URL"
+                        },
+                        "message": {
+                          "type": "string"
+                        },
+                        "details": {
+                          "type": "object",
+                          "additionalProperties": {}
+                        },
+                        "requestId": {
+                          "type": "string"
+                        }
+                      }
+                    }
+                  },
+                  "title": "Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/results/{id}/download": {
+      "get": {
+        "summary": "Download one result",
+        "tags": [
+          "results"
+        ],
+        "description": "`format` = markdown | html | text | json (json includes metadata and every stored format).",
+        "parameters": [
+          {
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "enum": [
+                    "markdown"
+                  ]
+                },
+                {
+                  "type": "string",
+                  "enum": [
+                    "html"
+                  ]
+                },
+                {
+                  "type": "string",
+                  "enum": [
+                    "text"
+                  ]
+                },
+                {
+                  "type": "string",
+                  "enum": [
+                    "json"
+                  ]
+                }
+              ],
+              "default": "json"
+            },
+            "in": "query",
+            "name": "format",
+            "required": false
+          },
+          {
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "in": "path",
+            "name": "id",
+            "required": true
+          }
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Default Response"
+          }
+        }
+      }
+    },
+    "/api/v1/projects": {
+      "get": {
+        "summary": "List your projects (to find a project_id)",
+        "tags": [
+          "projects"
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Default Response"
+          }
+        }
+      }
+    }
+  },
+  "tags": [
+    {
+      "name": "jobs",
+      "description": "Scrape and crawl jobs"
+    },
+    {
+      "name": "results",
+      "description": "Page results"
+    },
+    {
+      "name": "projects",
+      "description": "Projects"
+    }
+  ]
+}

@@ -1,0 +1,68 @@
+# Overrides applied to the UNMODIFIED upstream firecrawl/docker-compose.yaml (pinned in firecrawl.lock).
+# Every deviation from upstream defaults lives here and is documented in docs/architecture.md.
+#
+# Summary:
+#   1. The `backend` network is internal: Firecrawl containers have NO direct route to the internet.
+#      All outbound fetches go through `egress-proxy` (defined in ../docker-compose.yml), which
+#      enforces the SSRF policy at connect time.
+#   2. Firecrawl's API port is not published on the host's public interfaces (loopback only).
+#   3. The experimental FoundationDB services are moved behind a profile (not started).
+#   4. Resource limits reduced for a laptop-sized Docker VM.
+
+networks:
+  backend:
+    internal: true
+
+services:
+  api:
+    environment:
+      PROXY_SERVER: http://egress-proxy:3128
+      PROXY_USERNAME: ${EGRESS_PROXY_USERNAME:-firecrawl}
+      PROXY_PASSWORD: ${EGRESS_PROXY_PASSWORD:-change-me-egress}
+      # Upstream's fetch-engine check inspects the socket's remote address. Behind a forward proxy
+      # that address is always the proxy's (private) IP, which would reject every request, so the
+      # check is delegated to egress-proxy, which performs the same test on the real destination.
+      ALLOW_LOCAL_WEBHOOKS: "true"
+      NUM_WORKERS_PER_QUEUE: ${NUM_WORKERS_PER_QUEUE:-4}
+      LOGGING_LEVEL: ${FIRECRAWL_LOGGING_LEVEL:-info}
+    # Containers on an internal-only network cannot publish ports. Host access (local development
+    # only) goes through `firecrawl-gateway` in ../docker-compose.yml, bound to 127.0.0.1.
+    ports: !reset []
+    mem_limit: 4G
+    memswap_limit: 4G
+    cpus: 2.0
+    healthcheck:
+      test: ["CMD-SHELL", "node -e \"fetch('http://localhost:3002/v0/health/liveness').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))\""]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+      start_period: 30s
+    depends_on:
+      egress-proxy:
+        condition: service_healthy
+      # Upstream relies on `docker compose up` starting everything; make the dependency explicit.
+      nuq-postgres:
+        condition: service_started
+
+  playwright-service:
+    environment:
+      PROXY_SERVER: http://egress-proxy:3128
+      PROXY_USERNAME: ${EGRESS_PROXY_USERNAME:-firecrawl}
+      PROXY_PASSWORD: ${EGRESS_PROXY_PASSWORD:-change-me-egress}
+      # The service's own pre-navigation check resolves DNS itself; containers on an internal
+      # Docker network cannot resolve public names, so the check would reject everything.
+      # egress-proxy resolves and vets every destination instead (no TOCTOU window).
+      ALLOW_LOCAL_WEBHOOKS: "TRUE"
+      BLOCK_MEDIA: "TRUE"
+    mem_limit: 2G
+    memswap_limit: 2G
+    cpus: 2.0
+    depends_on:
+      egress-proxy:
+        condition: service_healthy
+
+  foundationdb:
+    profiles: ["fdb"]
+
+  foundationdb-init:
+    profiles: ["fdb"]

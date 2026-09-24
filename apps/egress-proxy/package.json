@@ -1,0 +1,20 @@
+{
+  "name": "@ws/egress-proxy",
+  "version": "0.2.0",
+  "private": true,
+  "description": "Forward proxy that enforces SSRF egress policy for the scraping engine",
+  "type": "module",
+  "main": "dist/index.js",
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "start": "node dist/index.js"
+  },
+  "dependencies": {
+    "@ws/net-policy": "*"
+  },
+  "devDependencies": {
+    "@types/node": "^22.10.0",
+    "typescript": "^5.7.0"
+  }
+}

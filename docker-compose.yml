@@ -1,0 +1,158 @@
+# Full local stack: upstream Firecrawl (unmodified, pinned) + our product layer.
+#
+#   ./scripts/fetch-firecrawl.sh     # once: fetch the pinned upstream release
+#   cp .env.example .env              # once
+#   docker compose up -d --build
+#   open http://localhost:3000
+#
+# Networks
+#   backend  (internal, no internet) : Firecrawl api/workers, playwright, redis, rabbitmq, nuq-postgres,
+#                                      egress-proxy, app-api (to call Firecrawl)
+#   egress   (internet)              : egress-proxy only  -> the single way out for the engine
+#   app                              : app-web, app-api, app-db
+
+name: webscraper
+
+include:
+  - path:
+      - firecrawl/docker-compose.yaml
+      - infra/firecrawl.override.yml
+    project_directory: firecrawl
+    # Included files interpolate from their own env files, not the root .env; pass both so
+    # EGRESS_PROXY_* etc. stay identical on both sides of the proxy.
+    env_file:
+      - infra/firecrawl.env
+      - .env
+
+services:
+  egress-proxy:
+    build:
+      context: .
+      dockerfile: apps/egress-proxy/Dockerfile
+    environment:
+      PORT: 3128
+      PROXY_USERNAME: ${EGRESS_PROXY_USERNAME:-firecrawl}
+      PROXY_PASSWORD: ${EGRESS_PROXY_PASSWORD:-change-me-egress}
+      EGRESS_ALLOW_HOSTS: ${TRUSTED_TEST_HOSTS:-}
+      EGRESS_ALLOWED_PORTS: ${EGRESS_ALLOWED_PORTS:-80,443,8080,8443}
+    networks:
+      - backend
+      - egress
+    healthcheck:
+      test: ["CMD", "wget", "-q", "-O", "-", "http://127.0.0.1:3128/healthz"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+    restart: unless-stopped
+
+  # Loopback-only TCP forwarder so a developer can run apps/api on the host against Firecrawl
+  # (FIRECRAWL_API_URL=http://localhost:3002). Never bind this to a public interface: self-hosted
+  # Firecrawl has no authentication.
+  firecrawl-gateway:
+    image: alpine/socat:1.8.0.1
+    command: ["TCP-LISTEN:3002,fork,reuseaddr", "TCP:api:3002"]
+    ports:
+      - "127.0.0.1:${FIRECRAWL_HOST_PORT:-3002}:3002"
+    networks:
+      - backend
+      - app
+    depends_on:
+      - api
+    restart: unless-stopped
+
+  app-db:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: ${APP_DB_USER:-webscraper}
+      POSTGRES_PASSWORD: ${APP_DB_PASSWORD:-webscraper}
+      POSTGRES_DB: ${APP_DB_NAME:-webscraper}
+    volumes:
+      - app-db-data:/var/lib/postgresql/data
+    ports:
+      - "127.0.0.1:${APP_DB_HOST_PORT:-5433}:5432"
+    networks:
+      - app
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${APP_DB_USER:-webscraper}"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+    restart: unless-stopped
+
+  app-api:
+    build:
+      context: .
+      dockerfile: apps/api/Dockerfile
+    env_file:
+      - path: .env
+        required: false
+    environment:
+      NODE_ENV: production
+      API_HOST: 0.0.0.0
+      API_PORT: 4000
+      DATABASE_URL: postgres://${APP_DB_USER:-webscraper}:${APP_DB_PASSWORD:-webscraper}@app-db:5432/${APP_DB_NAME:-webscraper}
+      FIRECRAWL_API_URL: http://api:3002
+      STORAGE_LOCAL_DIR: /data/objects
+      APP_ORIGIN: ${APP_ORIGIN:-http://localhost:3000}
+      COOKIE_SECURE: ${COOKIE_SECURE:-false}
+      URL_POLICY_ALLOW_HOSTS: ${TRUSTED_TEST_HOSTS:-}
+      METRICS_TOKEN: ${METRICS_TOKEN:-}
+    volumes:
+      - app-objects:/data
+    ports:
+      - "127.0.0.1:${API_HOST_PORT:-4000}:4000"
+    networks:
+      - app
+      - backend
+    depends_on:
+      app-db:
+        condition: service_healthy
+      api:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "wget", "-q", "-O", "-", "http://127.0.0.1:4000/healthz"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+    restart: unless-stopped
+
+  app-web:
+    build:
+      context: .
+      dockerfile: apps/web/Dockerfile
+    environment:
+      API_INTERNAL_URL: http://app-api:4000
+      PORT: 3000
+    ports:
+      - "${WEB_HOST_PORT:-3000}:3000"
+    networks:
+      - app
+    depends_on:
+      app-api:
+        condition: service_healthy
+    restart: unless-stopped
+
+  # Static fixture site for end-to-end crawl tests (profile "e2e"), reachable as http://testsite.test
+  # (Firecrawl rejects single-label hosts). Reachable only because TRUSTED_TEST_HOSTS=testsite.test
+  # explicitly trusts it; see docs/development.md.
+  testsite:
+    image: nginx:1.27-alpine
+    profiles: ["e2e"]
+    volumes:
+      - ./infra/testsite/html:/usr/share/nginx/html:ro
+      - ./infra/testsite/nginx.conf:/etc/nginx/conf.d/default.conf:ro
+    networks:
+      egress:
+        aliases: [testsite.test]
+      app:
+        aliases: [testsite.test]
+
+networks:
+  egress:
+    driver: bridge
+  app:
+    driver: bridge
+
+volumes:
+  app-db-data:
+  app-objects:
