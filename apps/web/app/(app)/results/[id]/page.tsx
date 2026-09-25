@@ -14,11 +14,11 @@ import { Table, TBody, TD, TH, THead, TR } from "@/components/ui/table";
 import { Tabs, type TabItem } from "@/components/ui/tabs";
 import { paths, type ResultWithContent } from "@/lib/api";
 import { formatBytes, formatDateTime } from "@/lib/format";
-import type { ResultContent } from "@/lib/types";
+import type { Branding, Confidence, ErrorInfo, ResultContent } from "@/lib/types";
 import { isHttpUrl } from "@/lib/url";
 import { useApi } from "@/lib/use-api";
 
-type TabId = "markdown" | "html" | "text" | "links" | "metadata";
+type TabId = "markdown" | "html" | "text" | "links" | "branding" | "metadata";
 
 function availableTabs(content: ResultContent | null): TabItem<TabId>[] {
   const tabs: TabItem<TabId>[] = [];
@@ -26,6 +26,7 @@ function availableTabs(content: ResultContent | null): TabItem<TabId>[] {
   if (content?.html !== undefined) tabs.push({ id: "html", label: "HTML" });
   if (content?.text !== undefined) tabs.push({ id: "text", label: "Text" });
   if (content?.links !== undefined) tabs.push({ id: "links", label: `Links (${content.links.length})` });
+  if (content?.branding !== undefined) tabs.push({ id: "branding", label: "Branding" });
   tabs.push({ id: "metadata", label: "Metadata" });
   return tabs;
 }
@@ -124,6 +125,247 @@ function LinksTab({ links }: { links: string[] }) {
           ))}
         </ol>
       )}
+    </>
+  );
+}
+
+const HEX_RE = /^#[0-9a-f]{6}$/i;
+const CHECKERBOARD = {
+  backgroundImage: "repeating-conic-gradient(#e5e5e5 0 25%, #ffffff 0 50%)",
+  backgroundSize: "16px 16px",
+};
+
+/** Only http(s) URLs and raster/SVG data URIs are ever used as <img> sources (SVG in <img> cannot run scripts). */
+function safeImageSrc(u: string | null | undefined): string | null {
+  if (!u) return null;
+  if (u.startsWith("data:image/")) return u;
+  return isHttpUrl(u) ? u : null;
+}
+
+function confidenceTone(c: Confidence) {
+  return c === "high" ? "green" : c === "medium" ? "amber" : "gray";
+}
+
+function ExternalUrl({ url }: { url: string }) {
+  if (url.startsWith("data:")) return <span className="font-mono text-xs text-muted">inline data URI</span>;
+  return isHttpUrl(url) ? (
+    <a href={url} target="_blank" rel="noopener noreferrer" className="link font-mono text-xs break-all">
+      {url}
+    </a>
+  ) : (
+    <span className="font-mono text-xs break-all">{url}</span>
+  );
+}
+
+function Swatch({ hex, size = "size-4" }: { hex: string; size?: string }) {
+  return (
+    <span
+      className={`inline-block shrink-0 rounded-sm border border-line-strong ${size}`}
+      style={{ backgroundColor: HEX_RE.test(hex) ? hex : "transparent" }}
+    />
+  );
+}
+
+function ColorRole({ role, hex }: { role: string; hex: string | null }) {
+  return (
+    <div className="min-w-0 rounded-md border border-line">
+      <div
+        className="h-12 rounded-t-md border-b border-line"
+        style={hex && HEX_RE.test(hex) ? { backgroundColor: hex } : CHECKERBOARD}
+      />
+      <div className="flex items-center justify-between gap-1 px-2 py-1.5">
+        <div className="min-w-0">
+          <div className="text-xs text-muted capitalize">{role}</div>
+          <code className="text-xs">{hex ?? "—"}</code>
+        </div>
+        {hex && <CopyButton text={hex} variant="ghost" />}
+      </div>
+    </div>
+  );
+}
+
+function BrandingSection({ title, children }: { title: string; children: ReactNode }) {
+  return (
+    <section className="space-y-2 border-b border-line p-3 last:border-b-0">
+      <h3 className="text-xs font-semibold tracking-wide text-muted uppercase">{title}</h3>
+      {children}
+    </section>
+  );
+}
+
+function BrandingTab({ branding, error }: { branding: Branding | null; error: ErrorInfo | null | undefined }) {
+  if (branding === null) {
+    return (
+      <div className="p-3">
+        <div role="alert" className="rounded-md border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-800">
+          <div className="flex flex-wrap items-baseline gap-x-2">
+            {error?.code && <code className="text-xs font-semibold">{error.code}</code>}
+            <span>{error?.message ?? "Branding extraction failed for this page."}</span>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  const { logo, favicon, colors, fonts } = branding;
+  const logoSrc = safeImageSrc(logo?.image) ?? safeImageSrc(logo?.url);
+  const faviconSrc = safeImageSrc(favicon?.url);
+  const roles = ["primary", "secondary", "accent", "background", "text"] as const;
+
+  return (
+    <>
+      <Toolbar>
+        <CopyButton text={JSON.stringify(branding, null, 2)} label="Copy JSON" />
+      </Toolbar>
+
+      <BrandingSection title="Logo">
+        {!logo ? (
+          <p className="text-sm text-muted">No logo was detected.</p>
+        ) : (
+          <div className="space-y-2">
+            {logoSrc ? (
+              <div className="flex flex-wrap gap-2">
+                <div
+                  className="flex h-32 min-w-[200px] items-center justify-center rounded-md border border-line p-3"
+                  style={CHECKERBOARD}
+                >
+                  <img
+                    src={logoSrc}
+                    alt={logo.alt ?? "Logo"}
+                    referrerPolicy="no-referrer"
+                    className="max-h-full max-w-[320px] object-contain"
+                  />
+                </div>
+                {logo.tone === "light" && (
+                  <div className="flex h-32 min-w-[200px] items-center justify-center rounded-md border border-line bg-neutral-900 p-3">
+                    <img
+                      src={logoSrc}
+                      alt={`${logo.alt ?? "Logo"} on dark background`}
+                      referrerPolicy="no-referrer"
+                      className="max-h-full max-w-[320px] object-contain"
+                    />
+                  </div>
+                )}
+              </div>
+            ) : (
+              <p className="text-sm text-muted">The logo has no displayable image.</p>
+            )}
+            <DefinitionList
+              items={[
+                ["Source", <code key="s" className="text-xs">{logo.source}</code>],
+                ["Confidence", <Badge key="c" tone={confidenceTone(logo.confidence)}>{logo.confidence}</Badge>],
+                ["Tone", logo.tone ?? "—"],
+                ["Size", logo.width && logo.height ? `${logo.width} × ${logo.height}` : "—"],
+                ["Alt text", logo.alt ?? "—"],
+                ["URL", logo.url ? <ExternalUrl key="u" url={logo.url} /> : "—"],
+                [
+                  "Logo colors",
+                  logo.colors.length ? (
+                    <span key="lc" className="flex flex-wrap gap-2">
+                      {logo.colors.map((h) => (
+                        <span key={h} className="inline-flex items-center gap-1">
+                          <Swatch hex={h} />
+                          <code className="text-xs">{h}</code>
+                        </span>
+                      ))}
+                    </span>
+                  ) : (
+                    "—"
+                  ),
+                ],
+              ]}
+            />
+          </div>
+        )}
+      </BrandingSection>
+
+      <BrandingSection title="Favicon">
+        {!favicon ? (
+          <p className="text-sm text-muted">No favicon was detected.</p>
+        ) : (
+          <div className="flex items-center gap-3">
+            {faviconSrc && (
+              <div className="flex size-10 shrink-0 items-center justify-center rounded-sm border border-line" style={CHECKERBOARD}>
+                <img src={faviconSrc} alt="Favicon" referrerPolicy="no-referrer" className="size-8 object-contain" />
+              </div>
+            )}
+            <div className="min-w-0 space-y-0.5">
+              <ExternalUrl url={favicon.url} />
+              <div className="text-xs text-muted">
+                {[favicon.type, favicon.sizes, favicon.source].filter(Boolean).join(" · ")}
+              </div>
+            </div>
+          </div>
+        )}
+      </BrandingSection>
+
+      <BrandingSection title="Colors">
+        <div className="grid grid-cols-2 gap-2 sm:grid-cols-3 lg:grid-cols-5">
+          {roles.map((role) => (
+            <ColorRole key={role} role={role} hex={colors[role]} />
+          ))}
+        </div>
+        {colors.palette.length > 0 && (
+          <div className="space-y-1">
+            <div className="text-xs text-muted">Palette</div>
+            <div className="flex flex-wrap gap-1.5">
+              {colors.palette.map((p) => (
+                <span
+                  key={p.hex}
+                  className="inline-flex items-center gap-1 rounded-sm border border-line px-1 py-0.5"
+                  title={`${p.hex} · weight ${p.weight}${p.sources.length ? ` · ${p.sources.join(", ")}` : ""}`}
+                >
+                  <Swatch hex={p.hex} size="size-3.5" />
+                  <code className="text-xs">{p.hex}</code>
+                </span>
+              ))}
+            </div>
+          </div>
+        )}
+        <p className="text-xs text-muted">
+          Basis: <code>{colors.basis}</code> · Confidence{" "}
+          <Badge tone={confidenceTone(colors.confidence)}>{colors.confidence}</Badge>
+        </p>
+      </BrandingSection>
+
+      <BrandingSection title="Details">
+        <DefinitionList
+          items={[
+            ["Site name", branding.site_name ?? "—"],
+            ["Final URL", branding.final_url ? <ExternalUrl key="f" url={branding.final_url} /> : "—"],
+            ["Heading font", fonts.heading ?? "—"],
+            ["Body font", fonts.body ?? "—"],
+            [
+              "Theme color",
+              branding.theme_color ? (
+                <span key="t" className="inline-flex items-center gap-1">
+                  <Swatch hex={branding.theme_color} />
+                  <code className="text-xs">{branding.theme_color}</code>
+                </span>
+              ) : (
+                "—"
+              ),
+            ],
+            ["OG image", branding.og_image ? <ExternalUrl key="o" url={branding.og_image} /> : "—"],
+            [
+              "Icons",
+              branding.icons.length ? (
+                <ul key="i" className="space-y-0.5">
+                  {branding.icons.map((ic, i) => (
+                    <li key={`${i}-${ic.url}`} className="flex flex-wrap items-baseline gap-x-2">
+                      <code className="text-xs text-muted">{ic.rel}</code>
+                      <ExternalUrl url={ic.url} />
+                      {ic.sizes && <span className="text-xs text-muted">{ic.sizes}</span>}
+                    </li>
+                  ))}
+                </ul>
+              ) : (
+                "—"
+              ),
+            ],
+          ]}
+        />
+      </BrandingSection>
     </>
   );
 }
@@ -262,6 +504,9 @@ export default function ResultPage() {
           {tab === "html" && c?.html !== undefined && <HtmlTab resultId={r.id} html={c.html} />}
           {tab === "text" && c?.text !== undefined && <TextTab resultId={r.id} format="text" text={c.text} />}
           {tab === "links" && c?.links !== undefined && <LinksTab links={c.links} />}
+          {tab === "branding" && c?.branding !== undefined && (
+            <BrandingTab branding={c.branding} error={c.branding_error} />
+          )}
           {tab === "metadata" && <MetadataTab result={r} />}
         </Panel>
       </div>

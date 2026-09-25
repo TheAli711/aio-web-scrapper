@@ -9,7 +9,10 @@ import { Tabs } from "@/components/ui/tabs";
 import { api } from "@/lib/api";
 import type { CrawlRequest, JobType, OutputFormat, ScrapeRequest } from "@/lib/types";
 
-const FORMATS: OutputFormat[] = ["markdown", "html", "text"];
+const FORMATS: OutputFormat[] = ["markdown", "html", "text", "branding"];
+/** Branding extraction is scrape-only; the API rejects it for crawls. */
+const SCRAPE_ONLY_FORMATS: OutputFormat[] = ["branding"];
+const FORMAT_LABELS: Partial<Record<OutputFormat, string>> = { branding: "Branding (logo, colors)" };
 
 function lines(s: string): string[] {
   return s
@@ -55,6 +58,13 @@ export function NewJobForm({ projectId }: { projectId: string }) {
 
   const toggleFormat = (f: OutputFormat, on: boolean) =>
     setFormats((cur) => (on ? FORMATS.filter((x) => x === f || cur.includes(x)) : cur.filter((x) => x !== f)));
+
+  const changeMode = (m: JobType) => {
+    setMode(m);
+    if (m === "crawl") setFormats((cur) => cur.filter((x) => !SCRAPE_ONLY_FORMATS.includes(x)));
+  };
+
+  const availableFormats = mode === "crawl" ? FORMATS.filter((f) => !SCRAPE_ONLY_FORMATS.includes(f)) : FORMATS;
 
   const submit = async (e: FormEvent) => {
     e.preventDefault();
@@ -110,7 +120,7 @@ export function NewJobForm({ projectId }: { projectId: string }) {
           { id: "crawl", label: "Crawl" },
         ]}
         value={mode}
-        onChange={setMode}
+        onChange={changeMode}
       />
       <p className="text-xs text-muted">
         {mode === "scrape"
@@ -132,13 +142,17 @@ export function NewJobForm({ projectId }: { projectId: string }) {
       </Field>
 
       <div className="grid gap-3 sm:grid-cols-2">
-        <Field label="Output formats" error={fieldErrors.formats}>
+        <Field
+          label="Output formats"
+          hint={mode === "scrape" ? "Branding adds ~15–30 s. Scrape only." : undefined}
+          error={fieldErrors.formats}
+        >
           <div className="flex flex-wrap gap-x-4 gap-y-1 pt-0.5">
-            {FORMATS.map((f) => (
+            {availableFormats.map((f) => (
               <Checkbox
                 key={f}
                 id={`fmt-${f}`}
-                label={f}
+                label={FORMAT_LABELS[f] ?? f}
                 checked={formats.includes(f)}
                 onChange={(e) => toggleFormat(f, e.target.checked)}
               />

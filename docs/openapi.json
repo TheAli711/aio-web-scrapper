@@ -66,11 +66,18 @@
                           "enum": [
                             "text"
                           ]
+                        },
+                        {
+                          "type": "string",
+                          "enum": [
+                            "branding"
+                          ]
                         }
-                      ]
+                      ],
+                      "description": "`branding` (scrape only) adds logo, favicon, brand colors and fonts; it loads the page in a browser and adds ~15-30 s."
                     },
                     "minItems": 1,
-                    "maxItems": 3,
+                    "maxItems": 4,
                     "uniqueItems": true,
                     "description": "Default: [\"markdown\"]"
                   },
@@ -459,6 +466,464 @@
                                           "items": {
                                             "type": "string"
                                           }
+                                        },
+                                        "branding": {
+                                          "anyOf": [
+                                            {
+                                              "type": "object",
+                                              "required": [
+                                                "final_url",
+                                                "site_name",
+                                                "logo",
+                                                "favicon",
+                                                "icons",
+                                                "colors",
+                                                "fonts",
+                                                "theme_color",
+                                                "og_image"
+                                              ],
+                                              "properties": {
+                                                "final_url": {
+                                                  "anyOf": [
+                                                    {
+                                                      "type": "string"
+                                                    },
+                                                    {
+                                                      "type": "null"
+                                                    }
+                                                  ]
+                                                },
+                                                "site_name": {
+                                                  "anyOf": [
+                                                    {
+                                                      "type": "string"
+                                                    },
+                                                    {
+                                                      "type": "null"
+                                                    }
+                                                  ]
+                                                },
+                                                "logo": {
+                                                  "anyOf": [
+                                                    {
+                                                      "type": "object",
+                                                      "required": [
+                                                        "url",
+                                                        "image",
+                                                        "source",
+                                                        "alt",
+                                                        "width",
+                                                        "height",
+                                                        "tone",
+                                                        "colors",
+                                                        "confidence"
+                                                      ],
+                                                      "properties": {
+                                                        "url": {
+                                                          "anyOf": [
+                                                            {
+                                                              "type": "string",
+                                                              "description": "Logo image URL (or an SVG data URI for inline SVG logos)"
+                                                            },
+                                                            {
+                                                              "type": "null"
+                                                            }
+                                                          ]
+                                                        },
+                                                        "image": {
+                                                          "anyOf": [
+                                                            {
+                                                              "type": "string",
+                                                              "description": "PNG data URI of the logo as rendered on the page"
+                                                            },
+                                                            {
+                                                              "type": "null"
+                                                            }
+                                                          ]
+                                                        },
+                                                        "source": {
+                                                          "type": "string",
+                                                          "description": "dom-img | dom-svg | dom-background | json-ld | icon"
+                                                        },
+                                                        "alt": {
+                                                          "anyOf": [
+                                                            {
+                                                              "type": "string"
+                                                            },
+                                                            {
+                                                              "type": "null"
+                                                            }
+                                                          ]
+                                                        },
+                                                        "width": {
+                                                          "anyOf": [
+                                                            {
+                                                              "type": "integer"
+                                                            },
+                                                            {
+                                                              "type": "null"
+                                                            }
+                                                          ]
+                                                        },
+                                                        "height": {
+                                                          "anyOf": [
+                                                            {
+                                                              "type": "integer"
+                                                            },
+                                                            {
+                                                              "type": "null"
+                                                            }
+                                                          ]
+                                                        },
+                                                        "tone": {
+                                                          "anyOf": [
+                                                            {
+                                                              "anyOf": [
+                                                                {
+                                                                  "type": "string",
+                                                                  "enum": [
+                                                                    "dark"
+                                                                  ]
+                                                                },
+                                                                {
+                                                                  "type": "string",
+                                                                  "enum": [
+                                                                    "light"
+                                                                  ]
+                                                                },
+                                                                {
+                                                                  "type": "string",
+                                                                  "enum": [
+                                                                    "color"
+                                                                  ]
+                                                                }
+                                                              ],
+                                                              "description": "dark = for light backgrounds, light = for dark backgrounds"
+                                                            },
+                                                            {
+                                                              "type": "null"
+                                                            }
+                                                          ]
+                                                        },
+                                                        "colors": {
+                                                          "type": "array",
+                                                          "items": {
+                                                            "type": "string"
+                                                          },
+                                                          "description": "The logo's own colors, most prominent first"
+                                                        },
+                                                        "confidence": {
+                                                          "anyOf": [
+                                                            {
+                                                              "type": "string",
+                                                              "enum": [
+                                                                "high"
+                                                              ]
+                                                            },
+                                                            {
+                                                              "type": "string",
+                                                              "enum": [
+                                                                "medium"
+                                                              ]
+                                                            },
+                                                            {
+                                                              "type": "string",
+                                                              "enum": [
+                                                                "low"
+                                                              ]
+                                                            }
+                                                          ]
+                                                        }
+                                                      }
+                                                    },
+                                                    {
+                                                      "type": "null"
+                                                    }
+                                                  ]
+                                                },
+                                                "favicon": {
+                                                  "anyOf": [
+                                                    {
+                                                      "type": "object",
+                                                      "required": [
+                                                        "url",
+                                                        "sizes",
+                                                        "type",
+                                                        "source"
+                                                      ],
+                                                      "properties": {
+                                                        "url": {
+                                                          "type": "string"
+                                                        },
+                                                        "sizes": {
+                                                          "anyOf": [
+                                                            {
+                                                              "type": "string"
+                                                            },
+                                                            {
+                                                              "type": "null"
+                                                            }
+                                                          ]
+                                                        },
+                                                        "type": {
+                                                          "anyOf": [
+                                                            {
+                                                              "type": "string"
+                                                            },
+                                                            {
+                                                              "type": "null"
+                                                            }
+                                                          ]
+                                                        },
+                                                        "source": {
+                                                          "type": "string"
+                                                        }
+                                                      }
+                                                    },
+                                                    {
+                                                      "type": "null"
+                                                    }
+                                                  ]
+                                                },
+                                                "icons": {
+                                                  "type": "array",
+                                                  "items": {
+                                                    "type": "object",
+                                                    "required": [
+                                                      "url",
+                                                      "rel",
+                                                      "sizes",
+                                                      "type"
+                                                    ],
+                                                    "properties": {
+                                                      "url": {
+                                                        "type": "string"
+                                                      },
+                                                      "rel": {
+                                                        "type": "string"
+                                                      },
+                                                      "sizes": {
+                                                        "anyOf": [
+                                                          {
+                                                            "type": "string"
+                                                          },
+                                                          {
+                                                            "type": "null"
+                                                          }
+                                                        ]
+                                                      },
+                                                      "type": {
+                                                        "anyOf": [
+                                                          {
+                                                            "type": "string"
+                                                          },
+                                                          {
+                                                            "type": "null"
+                                                          }
+                                                        ]
+                                                      }
+                                                    }
+                                                  }
+                                                },
+                                                "colors": {
+                                                  "type": "object",
+                                                  "required": [
+                                                    "primary",
+                                                    "secondary",
+                                                    "accent",
+                                                    "background",
+                                                    "text",
+                                                    "palette",
+                                                    "basis",
+                                                    "confidence"
+                                                  ],
+                                                  "properties": {
+                                                    "primary": {
+                                                      "anyOf": [
+                                                        {
+                                                          "type": "string",
+                                                          "description": "#RRGGBB"
+                                                        },
+                                                        {
+                                                          "type": "null"
+                                                        }
+                                                      ]
+                                                    },
+                                                    "secondary": {
+                                                      "anyOf": [
+                                                        {
+                                                          "type": "string",
+                                                          "description": "#RRGGBB"
+                                                        },
+                                                        {
+                                                          "type": "null"
+                                                        }
+                                                      ]
+                                                    },
+                                                    "accent": {
+                                                      "anyOf": [
+                                                        {
+                                                          "type": "string",
+                                                          "description": "#RRGGBB"
+                                                        },
+                                                        {
+                                                          "type": "null"
+                                                        }
+                                                      ]
+                                                    },
+                                                    "background": {
+                                                      "anyOf": [
+                                                        {
+                                                          "type": "string",
+                                                          "description": "#RRGGBB"
+                                                        },
+                                                        {
+                                                          "type": "null"
+                                                        }
+                                                      ]
+                                                    },
+                                                    "text": {
+                                                      "anyOf": [
+                                                        {
+                                                          "type": "string",
+                                                          "description": "#RRGGBB"
+                                                        },
+                                                        {
+                                                          "type": "null"
+                                                        }
+                                                      ]
+                                                    },
+                                                    "palette": {
+                                                      "type": "array",
+                                                      "items": {
+                                                        "type": "object",
+                                                        "required": [
+                                                          "hex",
+                                                          "weight",
+                                                          "sources"
+                                                        ],
+                                                        "properties": {
+                                                          "hex": {
+                                                            "type": "string"
+                                                          },
+                                                          "weight": {
+                                                            "type": "number"
+                                                          },
+                                                          "sources": {
+                                                            "type": "array",
+                                                            "items": {
+                                                              "type": "string"
+                                                            }
+                                                          }
+                                                        }
+                                                      }
+                                                    },
+                                                    "basis": {
+                                                      "type": "string",
+                                                      "description": "Signals behind the primary color, e.g. buttons+logo+header"
+                                                    },
+                                                    "confidence": {
+                                                      "anyOf": [
+                                                        {
+                                                          "type": "string",
+                                                          "enum": [
+                                                            "high"
+                                                          ]
+                                                        },
+                                                        {
+                                                          "type": "string",
+                                                          "enum": [
+                                                            "medium"
+                                                          ]
+                                                        },
+                                                        {
+                                                          "type": "string",
+                                                          "enum": [
+                                                            "low"
+                                                          ]
+                                                        }
+                                                      ]
+                                                    }
+                                                  }
+                                                },
+                                                "fonts": {
+                                                  "type": "object",
+                                                  "required": [
+                                                    "heading",
+                                                    "body"
+                                                  ],
+                                                  "properties": {
+                                                    "heading": {
+                                                      "anyOf": [
+                                                        {
+                                                          "type": "string"
+                                                        },
+                                                        {
+                                                          "type": "null"
+                                                        }
+                                                      ]
+                                                    },
+                                                    "body": {
+                                                      "anyOf": [
+                                                        {
+                                                          "type": "string"
+                                                        },
+                                                        {
+                                                          "type": "null"
+                                                        }
+                                                      ]
+                                                    }
+                                                  }
+                                                },
+                                                "theme_color": {
+                                                  "anyOf": [
+                                                    {
+                                                      "type": "string"
+                                                    },
+                                                    {
+                                                      "type": "null"
+                                                    }
+                                                  ]
+                                                },
+                                                "og_image": {
+                                                  "anyOf": [
+                                                    {
+                                                      "type": "string"
+                                                    },
+                                                    {
+                                                      "type": "null"
+                                                    }
+                                                  ]
+                                                }
+                                              },
+                                              "title": "Branding"
+                                            },
+                                            {
+                                              "type": "null"
+                                            }
+                                          ]
+                                        },
+                                        "branding_error": {
+                                          "anyOf": [
+                                            {
+                                              "type": "object",
+                                              "required": [
+                                                "code",
+                                                "message"
+                                              ],
+                                              "properties": {
+                                                "code": {
+                                                  "type": "string"
+                                                },
+                                                "message": {
+                                                  "type": "string"
+                                                }
+                                              }
+                                            },
+                                            {
+                                              "type": "null"
+                                            }
+                                          ]
                                         }
                                       }
                                     },
@@ -949,11 +1414,18 @@
                           "enum": [
                             "text"
                           ]
+                        },
+                        {
+                          "type": "string",
+                          "enum": [
+                            "branding"
+                          ]
                         }
-                      ]
+                      ],
+                      "description": "`branding` (scrape only) adds logo, favicon, brand colors and fonts; it loads the page in a browser and adds ~15-30 s."
                     },
                     "minItems": 1,
-                    "maxItems": 3,
+                    "maxItems": 4,
                     "uniqueItems": true,
                     "description": "Default: [\"markdown\"]"
                   },
@@ -2547,6 +3019,464 @@
                                             "items": {
                                               "type": "string"
                                             }
+                                          },
+                                          "branding": {
+                                            "anyOf": [
+                                              {
+                                                "type": "object",
+                                                "required": [
+                                                  "final_url",
+                                                  "site_name",
+                                                  "logo",
+                                                  "favicon",
+                                                  "icons",
+                                                  "colors",
+                                                  "fonts",
+                                                  "theme_color",
+                                                  "og_image"
+                                                ],
+                                                "properties": {
+                                                  "final_url": {
+                                                    "anyOf": [
+                                                      {
+                                                        "type": "string"
+                                                      },
+                                                      {
+                                                        "type": "null"
+                                                      }
+                                                    ]
+                                                  },
+                                                  "site_name": {
+                                                    "anyOf": [
+                                                      {
+                                                        "type": "string"
+                                                      },
+                                                      {
+                                                        "type": "null"
+                                                      }
+                                                    ]
+                                                  },
+                                                  "logo": {
+                                                    "anyOf": [
+                                                      {
+                                                        "type": "object",
+                                                        "required": [
+                                                          "url",
+                                                          "image",
+                                                          "source",
+                                                          "alt",
+                                                          "width",
+                                                          "height",
+                                                          "tone",
+                                                          "colors",
+                                                          "confidence"
+                                                        ],
+                                                        "properties": {
+                                                          "url": {
+                                                            "anyOf": [
+                                                              {
+                                                                "type": "string",
+                                                                "description": "Logo image URL (or an SVG data URI for inline SVG logos)"
+                                                              },
+                                                              {
+                                                                "type": "null"
+                                                              }
+                                                            ]
+                                                          },
+                                                          "image": {
+                                                            "anyOf": [
+                                                              {
+                                                                "type": "string",
+                                                                "description": "PNG data URI of the logo as rendered on the page"
+                                                              },
+                                                              {
+                                                                "type": "null"
+                                                              }
+                                                            ]
+                                                          },
+                                                          "source": {
+                                                            "type": "string",
+                                                            "description": "dom-img | dom-svg | dom-background | json-ld | icon"
+                                                          },
+                                                          "alt": {
+                                                            "anyOf": [
+                                                              {
+                                                                "type": "string"
+                                                              },
+                                                              {
+                                                                "type": "null"
+                                                              }
+                                                            ]
+                                                          },
+                                                          "width": {
+                                                            "anyOf": [
+                                                              {
+                                                                "type": "integer"
+                                                              },
+                                                              {
+                                                                "type": "null"
+                                                              }
+                                                            ]
+                                                          },
+                                                          "height": {
+                                                            "anyOf": [
+                                                              {
+                                                                "type": "integer"
+                                                              },
+                                                              {
+                                                                "type": "null"
+                                                              }
+                                                            ]
+                                                          },
+                                                          "tone": {
+                                                            "anyOf": [
+                                                              {
+                                                                "anyOf": [
+                                                                  {
+                                                                    "type": "string",
+                                                                    "enum": [
+                                                                      "dark"
+                                                                    ]
+                                                                  },
+                                                                  {
+                                                                    "type": "string",
+                                                                    "enum": [
+                                                                      "light"
+                                                                    ]
+                                                                  },
+                                                                  {
+                                                                    "type": "string",
+                                                                    "enum": [
+                                                                      "color"
+                                                                    ]
+                                                                  }
+                                                                ],
+                                                                "description": "dark = for light backgrounds, light = for dark backgrounds"
+                                                              },
+                                                              {
+                                                                "type": "null"
+                                                              }
+                                                            ]
+                                                          },
+                                                          "colors": {
+                                                            "type": "array",
+                                                            "items": {
+                                                              "type": "string"
+                                                            },
+                                                            "description": "The logo's own colors, most prominent first"
+                                                          },
+                                                          "confidence": {
+                                                            "anyOf": [
+                                                              {
+                                                                "type": "string",
+                                                                "enum": [
+                                                                  "high"
+                                                                ]
+                                                              },
+                                                              {
+                                                                "type": "string",
+                                                                "enum": [
+                                                                  "medium"
+                                                                ]
+                                                              },
+                                                              {
+                                                                "type": "string",
+                                                                "enum": [
+                                                                  "low"
+                                                                ]
+                                                              }
+                                                            ]
+                                                          }
+                                                        }
+                                                      },
+                                                      {
+                                                        "type": "null"
+                                                      }
+                                                    ]
+                                                  },
+                                                  "favicon": {
+                                                    "anyOf": [
+                                                      {
+                                                        "type": "object",
+                                                        "required": [
+                                                          "url",
+                                                          "sizes",
+                                                          "type",
+                                                          "source"
+                                                        ],
+                                                        "properties": {
+                                                          "url": {
+                                                            "type": "string"
+                                                          },
+                                                          "sizes": {
+                                                            "anyOf": [
+                                                              {
+                                                                "type": "string"
+                                                              },
+                                                              {
+                                                                "type": "null"
+                                                              }
+                                                            ]
+                                                          },
+                                                          "type": {
+                                                            "anyOf": [
+                                                              {
+                                                                "type": "string"
+                                                              },
+                                                              {
+                                                                "type": "null"
+                                                              }
+                                                            ]
+                                                          },
+                                                          "source": {
+                                                            "type": "string"
+                                                          }
+                                                        }
+                                                      },
+                                                      {
+                                                        "type": "null"
+                                                      }
+                                                    ]
+                                                  },
+                                                  "icons": {
+                                                    "type": "array",
+                                                    "items": {
+                                                      "type": "object",
+                                                      "required": [
+                                                        "url",
+                                                        "rel",
+                                                        "sizes",
+                                                        "type"
+                                                      ],
+                                                      "properties": {
+                                                        "url": {
+                                                          "type": "string"
+                                                        },
+                                                        "rel": {
+                                                          "type": "string"
+                                                        },
+                                                        "sizes": {
+                                                          "anyOf": [
+                                                            {
+                                                              "type": "string"
+                                                            },
+                                                            {
+                                                              "type": "null"
+                                                            }
+                                                          ]
+                                                        },
+                                                        "type": {
+                                                          "anyOf": [
+                                                            {
+                                                              "type": "string"
+                                                            },
+                                                            {
+                                                              "type": "null"
+                                                            }
+                                                          ]
+                                                        }
+                                                      }
+                                                    }
+                                                  },
+                                                  "colors": {
+                                                    "type": "object",
+                                                    "required": [
+                                                      "primary",
+                                                      "secondary",
+                                                      "accent",
+                                                      "background",
+                                                      "text",
+                                                      "palette",
+                                                      "basis",
+                                                      "confidence"
+                                                    ],
+                                                    "properties": {
+                                                      "primary": {
+                                                        "anyOf": [
+                                                          {
+                                                            "type": "string",
+                                                            "description": "#RRGGBB"
+                                                          },
+                                                          {
+                                                            "type": "null"
+                                                          }
+                                                        ]
+                                                      },
+                                                      "secondary": {
+                                                        "anyOf": [
+                                                          {
+                                                            "type": "string",
+                                                            "description": "#RRGGBB"
+                                                          },
+                                                          {
+                                                            "type": "null"
+                                                          }
+                                                        ]
+                                                      },
+                                                      "accent": {
+                                                        "anyOf": [
+                                                          {
+                                                            "type": "string",
+                                                            "description": "#RRGGBB"
+                                                          },
+                                                          {
+                                                            "type": "null"
+                                                          }
+                                                        ]
+                                                      },
+                                                      "background": {
+                                                        "anyOf": [
+                                                          {
+                                                            "type": "string",
+                                                            "description": "#RRGGBB"
+                                                          },
+                                                          {
+                                                            "type": "null"
+                                                          }
+                                                        ]
+                                                      },
+                                                      "text": {
+                                                        "anyOf": [
+                                                          {
+                                                            "type": "string",
+                                                            "description": "#RRGGBB"
+                                                          },
+                                                          {
+                                                            "type": "null"
+                                                          }
+                                                        ]
+                                                      },
+                                                      "palette": {
+                                                        "type": "array",
+                                                        "items": {
+                                                          "type": "object",
+                                                          "required": [
+                                                            "hex",
+                                                            "weight",
+                                                            "sources"
+                                                          ],
+                                                          "properties": {
+                                                            "hex": {
+                                                              "type": "string"
+                                                            },
+                                                            "weight": {
+                                                              "type": "number"
+                                                            },
+                                                            "sources": {
+                                                              "type": "array",
+                                                              "items": {
+                                                                "type": "string"
+                                                              }
+                                                            }
+                                                          }
+                                                        }
+                                                      },
+                                                      "basis": {
+                                                        "type": "string",
+                                                        "description": "Signals behind the primary color, e.g. buttons+logo+header"
+                                                      },
+                                                      "confidence": {
+                                                        "anyOf": [
+                                                          {
+                                                            "type": "string",
+                                                            "enum": [
+                                                              "high"
+                                                            ]
+                                                          },
+                                                          {
+                                                            "type": "string",
+                                                            "enum": [
+                                                              "medium"
+                                                            ]
+                                                          },
+                                                          {
+                                                            "type": "string",
+                                                            "enum": [
+                                                              "low"
+                                                            ]
+                                                          }
+                                                        ]
+                                                      }
+                                                    }
+                                                  },
+                                                  "fonts": {
+                                                    "type": "object",
+                                                    "required": [
+                                                      "heading",
+                                                      "body"
+                                                    ],
+                                                    "properties": {
+                                                      "heading": {
+                                                        "anyOf": [
+                                                          {
+                                                            "type": "string"
+                                                          },
+                                                          {
+                                                            "type": "null"
+                                                          }
+                                                        ]
+                                                      },
+                                                      "body": {
+                                                        "anyOf": [
+                                                          {
+                                                            "type": "string"
+                                                          },
+                                                          {
+                                                            "type": "null"
+                                                          }
+                                                        ]
+                                                      }
+                                                    }
+                                                  },
+                                                  "theme_color": {
+                                                    "anyOf": [
+                                                      {
+                                                        "type": "string"
+                                                      },
+                                                      {
+                                                        "type": "null"
+                                                      }
+                                                    ]
+                                                  },
+                                                  "og_image": {
+                                                    "anyOf": [
+                                                      {
+                                                        "type": "string"
+                                                      },
+                                                      {
+                                                        "type": "null"
+                                                      }
+                                                    ]
+                                                  }
+                                                },
+                                                "title": "Branding"
+                                              },
+                                              {
+                                                "type": "null"
+                                              }
+                                            ]
+                                          },
+                                          "branding_error": {
+                                            "anyOf": [
+                                              {
+                                                "type": "object",
+                                                "required": [
+                                                  "code",
+                                                  "message"
+                                                ],
+                                                "properties": {
+                                                  "code": {
+                                                    "type": "string"
+                                                  },
+                                                  "message": {
+                                                    "type": "string"
+                                                  }
+                                                }
+                                              },
+                                              {
+                                                "type": "null"
+                                              }
+                                            ]
                                           }
                                         }
                                       },
@@ -2959,6 +3889,464 @@
                                   "items": {
                                     "type": "string"
                                   }
+                                },
+                                "branding": {
+                                  "anyOf": [
+                                    {
+                                      "type": "object",
+                                      "required": [
+                                        "final_url",
+                                        "site_name",
+                                        "logo",
+                                        "favicon",
+                                        "icons",
+                                        "colors",
+                                        "fonts",
+                                        "theme_color",
+                                        "og_image"
+                                      ],
+                                      "properties": {
+                                        "final_url": {
+                                          "anyOf": [
+                                            {
+                                              "type": "string"
+                                            },
+                                            {
+                                              "type": "null"
+                                            }
+                                          ]
+                                        },
+                                        "site_name": {
+                                          "anyOf": [
+                                            {
+                                              "type": "string"
+                                            },
+                                            {
+                                              "type": "null"
+                                            }
+                                          ]
+                                        },
+                                        "logo": {
+                                          "anyOf": [
+                                            {
+                                              "type": "object",
+                                              "required": [
+                                                "url",
+                                                "image",
+                                                "source",
+                                                "alt",
+                                                "width",
+                                                "height",
+                                                "tone",
+                                                "colors",
+                                                "confidence"
+                                              ],
+                                              "properties": {
+                                                "url": {
+                                                  "anyOf": [
+                                                    {
+                                                      "type": "string",
+                                                      "description": "Logo image URL (or an SVG data URI for inline SVG logos)"
+                                                    },
+                                                    {
+                                                      "type": "null"
+                                                    }
+                                                  ]
+                                                },
+                                                "image": {
+                                                  "anyOf": [
+                                                    {
+                                                      "type": "string",
+                                                      "description": "PNG data URI of the logo as rendered on the page"
+                                                    },
+                                                    {
+                                                      "type": "null"
+                                                    }
+                                                  ]
+                                                },
+                                                "source": {
+                                                  "type": "string",
+                                                  "description": "dom-img | dom-svg | dom-background | json-ld | icon"
+                                                },
+                                                "alt": {
+                                                  "anyOf": [
+                                                    {
+                                                      "type": "string"
+                                                    },
+                                                    {
+                                                      "type": "null"
+                                                    }
+                                                  ]
+                                                },
+                                                "width": {
+                                                  "anyOf": [
+                                                    {
+                                                      "type": "integer"
+                                                    },
+                                                    {
+                                                      "type": "null"
+                                                    }
+                                                  ]
+                                                },
+                                                "height": {
+                                                  "anyOf": [
+                                                    {
+                                                      "type": "integer"
+                                                    },
+                                                    {
+                                                      "type": "null"
+                                                    }
+                                                  ]
+                                                },
+                                                "tone": {
+                                                  "anyOf": [
+                                                    {
+                                                      "anyOf": [
+                                                        {
+                                                          "type": "string",
+                                                          "enum": [
+                                                            "dark"
+                                                          ]
+                                                        },
+                                                        {
+                                                          "type": "string",
+                                                          "enum": [
+                                                            "light"
+                                                          ]
+                                                        },
+                                                        {
+                                                          "type": "string",
+                                                          "enum": [
+                                                            "color"
+                                                          ]
+                                                        }
+                                                      ],
+                                                      "description": "dark = for light backgrounds, light = for dark backgrounds"
+                                                    },
+                                                    {
+                                                      "type": "null"
+                                                    }
+                                                  ]
+                                                },
+                                                "colors": {
+                                                  "type": "array",
+                                                  "items": {
+                                                    "type": "string"
+                                                  },
+                                                  "description": "The logo's own colors, most prominent first"
+                                                },
+                                                "confidence": {
+                                                  "anyOf": [
+                                                    {
+                                                      "type": "string",
+                                                      "enum": [
+                                                        "high"
+                                                      ]
+                                                    },
+                                                    {
+                                                      "type": "string",
+                                                      "enum": [
+                                                        "medium"
+                                                      ]
+                                                    },
+                                                    {
+                                                      "type": "string",
+                                                      "enum": [
+                                                        "low"
+                                                      ]
+                                                    }
+                                                  ]
+                                                }
+                                              }
+                                            },
+                                            {
+                                              "type": "null"
+                                            }
+                                          ]
+                                        },
+                                        "favicon": {
+                                          "anyOf": [
+                                            {
+                                              "type": "object",
+                                              "required": [
+                                                "url",
+                                                "sizes",
+                                                "type",
+                                                "source"
+                                              ],
+                                              "properties": {
+                                                "url": {
+                                                  "type": "string"
+                                                },
+                                                "sizes": {
+                                                  "anyOf": [
+                                                    {
+                                                      "type": "string"
+                                                    },
+                                                    {
+                                                      "type": "null"
+                                                    }
+                                                  ]
+                                                },
+                                                "type": {
+                                                  "anyOf": [
+                                                    {
+                                                      "type": "string"
+                                                    },
+                                                    {
+                                                      "type": "null"
+                                                    }
+                                                  ]
+                                                },
+                                                "source": {
+                                                  "type": "string"
+                                                }
+                                              }
+                                            },
+                                            {
+                                              "type": "null"
+                                            }
+                                          ]
+                                        },
+                                        "icons": {
+                                          "type": "array",
+                                          "items": {
+                                            "type": "object",
+                                            "required": [
+                                              "url",
+                                              "rel",
+                                              "sizes",
+                                              "type"
+                                            ],
+                                            "properties": {
+                                              "url": {
+                                                "type": "string"
+                                              },
+                                              "rel": {
+                                                "type": "string"
+                                              },
+                                              "sizes": {
+                                                "anyOf": [
+                                                  {
+                                                    "type": "string"
+                                                  },
+                                                  {
+                                                    "type": "null"
+                                                  }
+                                                ]
+                                              },
+                                              "type": {
+                                                "anyOf": [
+                                                  {
+                                                    "type": "string"
+                                                  },
+                                                  {
+                                                    "type": "null"
+                                                  }
+                                                ]
+                                              }
+                                            }
+                                          }
+                                        },
+                                        "colors": {
+                                          "type": "object",
+                                          "required": [
+                                            "primary",
+                                            "secondary",
+                                            "accent",
+                                            "background",
+                                            "text",
+                                            "palette",
+                                            "basis",
+                                            "confidence"
+                                          ],
+                                          "properties": {
+                                            "primary": {
+                                              "anyOf": [
+                                                {
+                                                  "type": "string",
+                                                  "description": "#RRGGBB"
+                                                },
+                                                {
+                                                  "type": "null"
+                                                }
+                                              ]
+                                            },
+                                            "secondary": {
+                                              "anyOf": [
+                                                {
+                                                  "type": "string",
+                                                  "description": "#RRGGBB"
+                                                },
+                                                {
+                                                  "type": "null"
+                                                }
+                                              ]
+                                            },
+                                            "accent": {
+                                              "anyOf": [
+                                                {
+                                                  "type": "string",
+                                                  "description": "#RRGGBB"
+                                                },
+                                                {
+                                                  "type": "null"
+                                                }
+                                              ]
+                                            },
+                                            "background": {
+                                              "anyOf": [
+                                                {
+                                                  "type": "string",
+                                                  "description": "#RRGGBB"
+                                                },
+                                                {
+                                                  "type": "null"
+                                                }
+                                              ]
+                                            },
+                                            "text": {
+                                              "anyOf": [
+                                                {
+                                                  "type": "string",
+                                                  "description": "#RRGGBB"
+                                                },
+                                                {
+                                                  "type": "null"
+                                                }
+                                              ]
+                                            },
+                                            "palette": {
+                                              "type": "array",
+                                              "items": {
+                                                "type": "object",
+                                                "required": [
+                                                  "hex",
+                                                  "weight",
+                                                  "sources"
+                                                ],
+                                                "properties": {
+                                                  "hex": {
+                                                    "type": "string"
+                                                  },
+                                                  "weight": {
+                                                    "type": "number"
+                                                  },
+                                                  "sources": {
+                                                    "type": "array",
+                                                    "items": {
+                                                      "type": "string"
+                                                    }
+                                                  }
+                                                }
+                                              }
+                                            },
+                                            "basis": {
+                                              "type": "string",
+                                              "description": "Signals behind the primary color, e.g. buttons+logo+header"
+                                            },
+                                            "confidence": {
+                                              "anyOf": [
+                                                {
+                                                  "type": "string",
+                                                  "enum": [
+                                                    "high"
+                                                  ]
+                                                },
+                                                {
+                                                  "type": "string",
+                                                  "enum": [
+                                                    "medium"
+                                                  ]
+                                                },
+                                                {
+                                                  "type": "string",
+                                                  "enum": [
+                                                    "low"
+                                                  ]
+                                                }
+                                              ]
+                                            }
+                                          }
+                                        },
+                                        "fonts": {
+                                          "type": "object",
+                                          "required": [
+                                            "heading",
+                                            "body"
+                                          ],
+                                          "properties": {
+                                            "heading": {
+                                              "anyOf": [
+                                                {
+                                                  "type": "string"
+                                                },
+                                                {
+                                                  "type": "null"
+                                                }
+                                              ]
+                                            },
+                                            "body": {
+                                              "anyOf": [
+                                                {
+                                                  "type": "string"
+                                                },
+                                                {
+                                                  "type": "null"
+                                                }
+                                              ]
+                                            }
+                                          }
+                                        },
+                                        "theme_color": {
+                                          "anyOf": [
+                                            {
+                                              "type": "string"
+                                            },
+                                            {
+                                              "type": "null"
+                                            }
+                                          ]
+                                        },
+                                        "og_image": {
+                                          "anyOf": [
+                                            {
+                                              "type": "string"
+                                            },
+                                            {
+                                              "type": "null"
+                                            }
+                                          ]
+                                        }
+                                      },
+                                      "title": "Branding"
+                                    },
+                                    {
+                                      "type": "null"
+                                    }
+                                  ]
+                                },
+                                "branding_error": {
+                                  "anyOf": [
+                                    {
+                                      "type": "object",
+                                      "required": [
+                                        "code",
+                                        "message"
+                                      ],
+                                      "properties": {
+                                        "code": {
+                                          "type": "string"
+                                        },
+                                        "message": {
+                                          "type": "string"
+                                        }
+                                      }
+                                    },
+                                    {
+                                      "type": "null"
+                                    }
+                                  ]
                                 }
                               }
                             },

@@ -37,6 +37,15 @@ export interface Limits {
   maxCrawlDurationMs: number;
 }
 
+/**
+ * User-Agent sent on every engine request. Firecrawl's Playwright service otherwise picks a random
+ * one (often Firefox / Safari / mobile) for its headless Chromium; bot walls such as Cloudflare
+ * flag that mismatch and serve a challenge page. A Chrome-on-Linux UA matches the real browser.
+ * Keep the major version close to the Chromium in the pinned playwright-service image.
+ */
+export const DEFAULT_USER_AGENT =
+  "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/149.0.0.0 Safari/537.36";
+
 export interface AppConfig {
   env: "development" | "production" | "test";
   host: string;
@@ -47,7 +56,8 @@ export interface AppConfig {
   cookieSecure: boolean;
   sessionTtlHours: number;
   allowSignup: boolean;
-  firecrawl: { apiUrl: string; apiKey: string; requestTimeoutMs: number };
+  firecrawl: { apiUrl: string; apiKey: string; requestTimeoutMs: number; userAgent: string };
+  branding: { serviceUrl: string; timeoutMs: number };
   storage: { driver: "local"; localDir: string };
   urlPolicy: NetPolicyConfig;
   limits: Limits;
@@ -72,6 +82,11 @@ export function loadConfig(): AppConfig {
       apiUrl: str("FIRECRAWL_API_URL", "http://localhost:3002").replace(/\/+$/, ""),
       apiKey: str("FIRECRAWL_API_KEY", "self-hosted"),
       requestTimeoutMs: int("FIRECRAWL_REQUEST_TIMEOUT_MS", 30_000, 1000),
+      userAgent: str("FIRECRAWL_USER_AGENT", DEFAULT_USER_AGENT),
+    },
+    branding: {
+      serviceUrl: str("BRAND_SERVICE_URL", "http://localhost:4100").replace(/\/+$/, ""),
+      timeoutMs: int("BRAND_SERVICE_TIMEOUT_MS", 60_000, 1000),
     },
     storage: { driver: "local", localDir: str("STORAGE_LOCAL_DIR", "./data/objects") },
     urlPolicy: createPolicyConfig({

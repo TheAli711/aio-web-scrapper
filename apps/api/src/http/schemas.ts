@@ -21,7 +21,9 @@ export const ErrorBody = Type.Object(
   { title: "Error" },
 );
 
-export const OutputFormat = Type.Union([Type.Literal("markdown"), Type.Literal("html"), Type.Literal("text")]);
+export const OutputFormat = Type.Union([Type.Literal("markdown"), Type.Literal("html"), Type.Literal("text"), Type.Literal("branding")], {
+  description: "`branding` (scrape only) adds logo, favicon, brand colors and fonts; it loads the page in a browser and adds ~15-30 s.",
+});
 
 const ScrapeFields = {
   url: Type.String({ minLength: 1, maxLength: 2048, description: "http(s) URL to fetch", examples: ["https://example.com"] }),
@@ -29,7 +31,7 @@ const ScrapeFields = {
     Type.String({ format: "uuid", description: "Project to file the job under. Default: your oldest project (\"Default project\")." }),
   ),
   formats: Type.Optional(
-    Type.Array(OutputFormat, { minItems: 1, maxItems: 3, uniqueItems: true, description: "Default: [\"markdown\"]" }),
+    Type.Array(OutputFormat, { minItems: 1, maxItems: 4, uniqueItems: true, description: "Default: [\"markdown\"]" }),
   ),
   only_main_content: Type.Optional(Type.Boolean({ description: "Strip nav/footer boilerplate. Default true." })),
   timeout_ms: Type.Optional(Type.Integer({ minimum: 1000, description: "Per-page timeout. Default 30000; server max applies." })),
@@ -119,11 +121,52 @@ export const ResultSummary = Type.Object(
   { title: "ResultSummary" },
 );
 
+const Confidence = Type.Union([Type.Literal("high"), Type.Literal("medium"), Type.Literal("low")]);
+const Hex = Nullable(Type.String({ description: "#RRGGBB" }));
+
+export const Branding = Type.Object(
+  {
+    final_url: Nullable(Type.String()),
+    site_name: Nullable(Type.String()),
+    logo: Nullable(
+      Type.Object({
+        url: Nullable(Type.String({ description: "Logo image URL (or an SVG data URI for inline SVG logos)" })),
+        image: Nullable(Type.String({ description: "PNG data URI of the logo as rendered on the page" })),
+        source: Type.String({ description: "dom-img | dom-svg | dom-background | json-ld | icon" }),
+        alt: Nullable(Type.String()),
+        width: Nullable(Type.Integer()),
+        height: Nullable(Type.Integer()),
+        tone: Nullable(Type.Union([Type.Literal("dark"), Type.Literal("light"), Type.Literal("color")], { description: "dark = for light backgrounds, light = for dark backgrounds" })),
+        colors: Type.Array(Type.String(), { description: "The logo's own colors, most prominent first" }),
+        confidence: Confidence,
+      }),
+    ),
+    favicon: Nullable(Type.Object({ url: Type.String(), sizes: Nullable(Type.String()), type: Nullable(Type.String()), source: Type.String() })),
+    icons: Type.Array(Type.Object({ url: Type.String(), rel: Type.String(), sizes: Nullable(Type.String()), type: Nullable(Type.String()) })),
+    colors: Type.Object({
+      primary: Hex,
+      secondary: Hex,
+      accent: Hex,
+      background: Hex,
+      text: Hex,
+      palette: Type.Array(Type.Object({ hex: Type.String(), weight: Type.Number(), sources: Type.Array(Type.String()) })),
+      basis: Type.String({ description: "Signals behind the primary color, e.g. buttons+logo+header" }),
+      confidence: Confidence,
+    }),
+    fonts: Type.Object({ heading: Nullable(Type.String()), body: Nullable(Type.String()) }),
+    theme_color: Nullable(Type.String()),
+    og_image: Nullable(Type.String()),
+  },
+  { title: "Branding" },
+);
+
 export const ResultContent = Type.Object({
   markdown: Type.Optional(Type.String()),
   html: Type.Optional(Type.String()),
   text: Type.Optional(Type.String()),
   links: Type.Optional(Type.Array(Type.String())),
+  branding: Type.Optional(Nullable(Branding)),
+  branding_error: Type.Optional(Nullable(Type.Object({ code: Type.String(), message: Type.String() }))),
 });
 
 export const ResultWithContent = Type.Intersect([ResultSummary, Type.Object({ content: Nullable(ResultContent) })], {

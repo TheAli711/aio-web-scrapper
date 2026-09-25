@@ -18,6 +18,7 @@ import type { Resolver } from "@ws/net-policy";
 import type { AppConfig } from "./config.js";
 import type { Db } from "./db/pool.js";
 import { projects } from "./db/repos.js";
+import type { BrandingService } from "./engine/branding.js";
 import type { ScrapingEngine } from "./engine/types.js";
 import { authPlugin, principalOf } from "./http/auth.js";
 import { presentProject } from "./http/present.js";
@@ -36,6 +37,8 @@ export interface AppDeps {
   config: AppConfig;
   db: Db;
   engine: ScrapingEngine;
+  /** Logo / color extraction for the "branding" format; null disables it. */
+  branding?: BrandingService | null;
   storage: ObjectStorage;
   metrics: Metrics;
   /** Override DNS for tests. */
@@ -90,7 +93,7 @@ export async function buildApp(deps: AppDeps): Promise<FastifyInstance> {
 
   const log: FastifyBaseLogger = app.log;
   const resultsSvc = new ResultService(db, storage, config.limits.maxResultBytes);
-  const jobsSvc = new JobService(db, engine, resultsSvc, metrics, log, config.limits, config.urlPolicy, deps.resolver);
+  const jobsSvc = new JobService(db, engine, resultsSvc, metrics, log, config.limits, config.urlPolicy, deps.resolver, deps.branding ?? null, config.branding.timeoutMs);
   const reconciler = new Reconciler(db, engine, jobsSvc, resultsSvc, metrics, log, config.limits, config.reconcileIntervalMs);
   const ctx: AppContext = { ...deps, jobsSvc, resultsSvc, reconciler };
   app.decorate("ctx", ctx);

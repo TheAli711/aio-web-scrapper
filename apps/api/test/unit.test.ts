@@ -86,3 +86,60 @@ describe("crypto", () => {
     expect(parseApiKey("wsk_short")).toBeNull();
   });
 });
+
+describe("FirecrawlEngine requests", () => {
+  it("sends a fixed Chrome User-Agent with every scrape", async () => {
+    const bodies: unknown[] = [];
+    const realFetch = globalThis.fetch;
+    globalThis.fetch = (async (_url: string, init: RequestInit) => {
+      bodies.push(JSON.parse(String(init.body)));
+      return new Response(JSON.stringify({ success: true, data: { markdown: "x", metadata: { statusCode: 200, sourceURL: "https://a.dev/" } } }), { status: 200 });
+    }) as typeof fetch;
+    try {
+      const engine = new FirecrawlEngine({ apiUrl: "http://fc", apiKey: "k", requestTimeoutMs: 1000, userAgent: "Mozilla/5.0 Test Chrome/149" });
+      await engine.scrape("https://a.dev/", { formats: ["markdown"], onlyMainContent: true, timeoutMs: 1000, waitForMs: 0 });
+    } finally {
+      globalThis.fetch = realFetch;
+    }
+    expect(bodies[0]).toMatchObject({ url: "https://a.dev/", proxy: "basic", headers: { "User-Agent": "Mozilla/5.0 Test Chrome/149" } });
+  });
+});
+
+describe("FirecrawlEngine render-wait retry", () => {
+  const withFetch = async (responses: unknown[], fn: (bodies: Array<Record<string, unknown>>) => Promise<void>) => {
+    const bodies: Array<Record<string, unknown>> = [];
+    const realFetch = globalThis.fetch;
+    globalThis.fetch = (async (_url: string, init: RequestInit) => {
+      bodies.push(JSON.parse(String(init.body)));
+      return new Response(JSON.stringify(responses[bodies.length - 1]), { status: 200 });
+    }) as typeof fetch;
+    try {
+      await fn(bodies);
+    } finally {
+      globalThis.fetch = realFetch;
+    }
+  };
+  const engine = new FirecrawlEngine({ apiUrl: "http://fc", apiKey: "k", requestTimeoutMs: 1000 });
+  const opts = { formats: ["markdown" as const], onlyMainContent: true, timeoutMs: 30000, waitForMs: 0 };
+  const full = { success: true, data: { markdown: "x".repeat(500), metadata: { statusCode: 200, sourceURL: "https://a.dev/" } } };
+
+  it("retries an 'all engines failed' page once with a render wait", async () => {
+    await withFetch([{ success: false, code: "SCRAPE_ALL_ENGINES_FAILED", error: "All scraping engines failed" }, full], async (bodies) => {
+      const page = await engine.scrape("https://a.dev/", opts);
+      expect(page.success).toBe(true);
+      expect(bodies.map((b) => b.waitFor)).toEqual([0, 5000]);
+    });
+  });
+
+  it("does not retry a full page or a caller-chosen wait", async () => {
+    await withFetch([full], async (bodies) => {
+      await engine.scrape("https://a.dev/", opts);
+      expect(bodies).toHaveLength(1);
+    });
+    await withFetch([{ success: false, code: "SCRAPE_ALL_ENGINES_FAILED", error: "x" }], async (bodies) => {
+      const page = await engine.scrape("https://a.dev/", { ...opts, waitForMs: 2000 });
+      expect(page.success).toBe(false);
+      expect(bodies).toHaveLength(1);
+    });
+  });
+});

@@ -7,7 +7,8 @@
     "packages/*",
     "apps/api",
     "apps/egress-proxy",
-    "apps/web"
+    "apps/web",
+    "apps/brand-service"
   ],
   "engines": {
     "node": ">=22"

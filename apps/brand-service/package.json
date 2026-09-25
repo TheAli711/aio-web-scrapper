@@ -1,0 +1,22 @@
+{
+  "name": "@ws/brand-service",
+  "version": "0.3.0",
+  "private": true,
+  "description": "Branding extraction (logo, favicon, brand colors, fonts) in a real browser behind egress-proxy",
+  "type": "module",
+  "main": "dist/index.js",
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "start": "node dist/index.js",
+    "test": "vitest run"
+  },
+  "dependencies": {
+    "playwright": "1.63.0"
+  },
+  "devDependencies": {
+    "@types/node": "^22.10.0",
+    "typescript": "^5.7.0",
+    "vitest": "^3.2.7"
+  }
+}

@@ -57,6 +57,49 @@ Jobs are asynchronous: create, poll `GET /jobs/{id}` until `status` is `complete
 `formats` defaults to `["markdown"]`. `timeout_ms` defaults to 30000 (server max
 `MAX_SCRAPE_TIMEOUT_MS`). `wait_for_ms` must be ≤ `timeout_ms / 2`. `project_id` is optional.
 
+When a page comes back empty (JavaScript-rendered sites such as Square Online) and `wait_for_ms`
+is 0, the server retries once with a 5 s render wait before reporting a failure.
+
+#### `branding` format (scrape only)
+
+Add `"branding"` to `formats` to also get the site's logo, favicon, brand colors and fonts:
+
+```json
+"content": {
+  "markdown": "...",
+  "branding": {
+    "logo": { "url": "https://…/logo.png", "image": "data:image/png;base64,…", "source": "dom-img",
+              "text": null, "alt": "Zona Med Spa", "width": 180, "height": 75,
+              "tone": "dark", "colors": ["#010101"], "confidence": "high" },
+    "favicon": { "url": "https://…/favicon-32x32.png", "sizes": "32x32", "type": "image/png", "source": "link" },
+    "icons": [ { "url": "…", "rel": "apple-touch-icon", "sizes": "180x180", "type": null } ],
+    "colors": { "primary": "#6B8F71", "secondary": "#B4795A", "accent": null,
+                "background": "#FFFFFF", "text": "#000000",
+                "palette": [ { "hex": "#6B8F71", "weight": 5.1, "sources": ["buttons", "background"] } ],
+                "basis": "buttons+background", "confidence": "medium" },
+    "fonts": { "heading": "Cormorant Garamond", "body": "Maven Pro" },
+    "theme_color": null, "og_image": "https://…", "site_name": "Zona Med Spa", "final_url": "https://…"
+  },
+  "branding_error": null
+}
+```
+
+- The page is loaded in a real browser (separate from the content scrape, in parallel) and
+  scrolled once; expect 15–30 s extra. `?wait=true` allows 60 s more when branding is requested.
+- `logo.source`: `dom-img`, `dom-svg` (`url` is an SVG data URI), `dom-background` (CSS background),
+  `dom-text` (styled site name; see `logo.text`), `json-ld` (schema.org `logo`) or `icon` (fallback).
+  `logo.image` is a PNG of the logo exactly as rendered (dropped first if the result exceeds the
+  size limit). `tone`: `dark` = drawn for light backgrounds, `light` = for dark backgrounds.
+- Colors come from what the page actually paints: buttons and CTAs weigh most, then the logo's
+  own pixels, named CSS brand variables, the header, links and headings, and visible surfaces.
+  Page-builder default palettes and third-party widgets (chat, social feeds, cookie banners) are
+  ignored. `secondary` is a second hue when the brand has one, otherwise a brand neutral.
+  `basis` lists the signals behind `primary`.
+- `confidence: "low"` on `logo` or `colors` means the heuristics were unsure; treat as a hint.
+- If branding fails but the page scraped, the job still completes: `branding` is `null` and
+  `branding_error` says why (`TIMEOUT`, `HTTP_ERROR`, `CONNECTION_FAILED`, ...).
+- Requesting `branding` on a crawl returns `VALIDATION_ERROR`.
+
 `?wait=true` blocks until the scrape finishes (up to `timeout_ms + 30s`) and returns **200**
 `{"job": Job, "result": Result-with-content | null}`. A failed scrape also returns 200, with
 `job.status = "failed"` and `job.error`. If the deadline passes first, the response is the usual

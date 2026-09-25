@@ -8,6 +8,7 @@
 | Application API | `apps/api` | Fastify 5, TypeBox, `pg` | Auth, projects, API keys, jobs, results, public API, OpenAPI, metrics. |
 | Engine adapter | `apps/api/src/engine` | TypeScript | `ScrapingEngine` interface + `FirecrawlEngine` (HTTP client for Firecrawl v2). |
 | Egress proxy | `apps/egress-proxy` | Node `http`/`net` | The only route from the engine to the internet; enforces SSRF policy. |
+| Brand service | `apps/brand-service` | Node, Playwright (Chromium) | Branding extraction for the `branding` format: logo, favicon, brand colors, fonts. Internal only; all traffic via egress-proxy. |
 | Net policy | `packages/net-policy` | `ipaddr.js` | Shared URL/IP/hostname rules used by app-api (pre-check) and egress-proxy (enforcement). |
 | App database | `app-db` | Postgres 16 | Users, sessions, projects, api_keys, jobs, results, job_events. |
 | Object storage | `apps/api/src/storage` | local FS (volume) | Page bodies (markdown/html/text/links) as JSON blobs. |
@@ -33,6 +34,36 @@
    written to object storage, and a `results` row with metadata is inserted.
 7. Job becomes `completed`, or `failed` with a structured error code. Metrics and a structured
    log line record the outcome.
+
+### Branding (`formats` includes `branding`, scrape only)
+
+`JobService.runScrape` calls `BrandingService.extract` (`engine/branding.ts`, HTTP to
+`brand-service:4100/v1/brand`) in parallel with `engine.scrape()`. Firecrawl cannot run custom
+page scripts self-hosted (its branding format needs the hosted fire-engine), so brand-service
+runs its own Chromium on the internal `backend` network. Its proxy is egress-proxy and its
+Chromium is started with `--proxy-bypass-list=<-loopback>`, so even loopback requests go through
+the SSRF policy.
+
+Pipeline (`apps/brand-service/src`, heuristics only, no LLM):
+
+1. Load the page with a Chrome UA matching the bundled Chromium; close / hide newsletter and
+   cookie modals.
+2. Logo pass (before scrolling, sticky headers change layout afterwards): score `<img>`, inline
+   `<svg>`, CSS-background and text-wordmark candidates by logo-ish attributes and file names,
+   header position, link to the home page, site-name match, size; penalise press / payment /
+   social / tiny icons. Screenshot the winner (`logo.image`) and read its ink colors against the
+   backdrop (taken from the capture's edge pixels).
+3. Scroll the page like a visitor (instant scrolling, then force-finish common reveal libraries),
+   then sample a point grid with `elementsFromPoint` and verify each sample against a full-page
+   screenshot pixel, which gives the true visible surface colors.
+4. Collect computed styles: button / CTA backgrounds (gradients included), links, headings,
+   header bands, named brand CSS variables (builder defaults ignored), paragraph text; skip fixed
+   widgets and third-party embeds.
+5. `color.ts` pools the signals with per-source weights, clusters them in Lab space and scores
+   each cluster by role (saturated > carrier-backed tints > dark brand neutrals). `secondary`
+   must be a different hue family. Confidence reflects how many independent signals agree.
+
+A branding failure never fails the scrape; it is reported in `content.branding_error`.
 
 ### Crawl
 

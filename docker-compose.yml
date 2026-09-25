@@ -79,6 +79,34 @@ services:
       retries: 20
     restart: unless-stopped
 
+  # Branding extraction (logo, favicon, brand colors). Own Chromium on the internal backend network;
+  # every request (including loopback) goes through egress-proxy, like the scraping engine.
+  brand-service:
+    build:
+      context: .
+      dockerfile: apps/brand-service/Dockerfile
+    environment:
+      PORT: 4100
+      PROXY_SERVER: http://egress-proxy:3128
+      PROXY_USERNAME: ${EGRESS_PROXY_USERNAME:-firecrawl}
+      PROXY_PASSWORD: ${EGRESS_PROXY_PASSWORD:-change-me-egress}
+      BRAND_MAX_CONCURRENCY: ${BRAND_MAX_CONCURRENCY:-3}
+    shm_size: 512m
+    mem_limit: 2G
+    memswap_limit: 2G
+    cpus: 2.0
+    networks:
+      - backend
+    depends_on:
+      egress-proxy:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "wget", "-q", "-O", "-", "http://127.0.0.1:4100/healthz"]
+      interval: 10s
+      timeout: 3s
+      retries: 10
+    restart: unless-stopped
+
   app-api:
     build:
       context: .
@@ -92,6 +120,7 @@ services:
       API_PORT: 4000
       DATABASE_URL: postgres://${APP_DB_USER:-webscraper}:${APP_DB_PASSWORD:-webscraper}@app-db:5432/${APP_DB_NAME:-webscraper}
       FIRECRAWL_API_URL: http://api:3002
+      BRAND_SERVICE_URL: http://brand-service:4100
       STORAGE_LOCAL_DIR: /data/objects
       APP_ORIGIN: ${APP_ORIGIN:-http://localhost:3000}
       COOKIE_SECURE: ${COOKIE_SECURE:-false}

@@ -63,6 +63,19 @@ The first run builds Firecrawl from source (10–15 min); later runs take second
 ./scripts/local.sh status | logs [service] | creds | new-key | down
 ```
 
+### Batch-testing a list of sites
+
+```bash
+node scripts/batch-scrape.mjs urls.txt                  # content + branding for every URL
+node scripts/batch-scrape.mjs urls.txt --sample 20      # random 20 from a long list
+pbpaste | node scripts/batch-scrape.mjs -               # URLs from the clipboard
+```
+
+Writes `output/batch-<timestamp>/`: one `.md` and `.branding.json` per site, `report.md` /
+`report.json` with a verdict per URL (GOOD / CHECK / BAD, plus the reason when it's the site's
+fault: `social`, `private`, `dead`, `parked`, `blocked`), and `report.html`, a visual review page
+with each site's logo, favicon and color swatches. No LLM calls.
+
 ### Using it from your agent / code
 
 Give your agent the API key and the guide URL, e.g. *"Use the web scraper API described at
@@ -98,7 +111,7 @@ open http://localhost:3000
 The API is also on `http://localhost:4000` (loopback only), the interactive API reference on
 `http://localhost:3000/api/v1/docs`, and Prometheus metrics on `http://localhost:4000/metrics`.
 
-`docker compose ps` should show `api`, `app-api`, `app-web`, `app-db`, `egress-proxy`
+`docker compose ps` should show `api`, `app-api`, `app-web`, `app-db`, `egress-proxy`, `brand-service`
 healthy, plus `playwright-service`, `redis`, `rabbitmq`, `nuq-postgres`, `firecrawl-gateway`.
 
 ## Create a user

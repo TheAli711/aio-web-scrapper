@@ -21,6 +21,7 @@ import type {
   Principal,
   ScrapeJobOptions,
 } from "../domain.js";
+import type { BrandingService } from "../engine/branding.js";
 import { EngineUnavailableError } from "../engine/firecrawl.js";
 import type { PageResult, ScrapingEngine } from "../engine/types.js";
 import { AppError, type ErrorCode } from "../lib/errors.js";
@@ -62,6 +63,8 @@ export class JobService {
     private readonly limits: Limits,
     private readonly urlPolicy: NetPolicyConfig,
     private readonly resolver: Resolver = systemResolver,
+    private readonly branding: BrandingService | null = null,
+    private readonly brandingTimeoutMs = 60_000,
   ) {}
 
   // ------------------------------------------------------------------ validation
@@ -84,6 +87,11 @@ export class JobService {
 
   private normalizeCrawlOptions(input: CrawlInput, startHost: string): CrawlJobOptions {
     const base = this.normalizeScrapeOptions(input);
+    if (base.formats.includes("branding")) {
+      throw new AppError("VALIDATION_ERROR", 'The "branding" format is only available for scrape jobs (brand the start URL with a scrape)', {
+        field: "formats",
+      });
+    }
     const maxPages = input.max_pages ?? Math.min(DEFAULT_CRAWL_PAGES, this.limits.maxCrawlPages);
     if (maxPages > this.limits.maxCrawlPages) {
       throw new AppError("LIMIT_EXCEEDED", `max_pages may not exceed ${this.limits.maxCrawlPages}`, {
@@ -221,7 +229,18 @@ export class JobService {
     const t0 = Date.now();
     let page: PageResult;
     try {
-      page = await this.engine.scrape(job.target_url, opts, ctrl.signal);
+      // Branding runs in its own browser, in parallel with the content scrape.
+      const wantsBranding = opts.formats.includes("branding");
+      const [scraped, branding] = await Promise.all([
+        this.engine.scrape(job.target_url, opts, ctrl.signal),
+        wantsBranding
+          ? this.branding
+            ? this.branding.extract(job.target_url, Math.max(opts.timeoutMs, this.brandingTimeoutMs), ctrl.signal)
+            : Promise.resolve({ ok: false as const, error: { code: "ENGINE_UNAVAILABLE" as const, message: "Branding is not configured on this server" } })
+          : Promise.resolve(undefined),
+      ]);
+      page = branding ? { ...scraped, branding } : scraped;
+      if (branding) this.metrics.increment("branding_total", { outcome: branding.ok ? "success" : "failure" });
     } finally {
       this.inFlight.delete(job.id);
     }

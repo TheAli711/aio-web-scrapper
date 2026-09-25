@@ -5,6 +5,7 @@ import type { AppConfig } from "../src/config.js";
 import { migrate } from "../src/db/migrate.js";
 import { createPool, type Db } from "../src/db/pool.js";
 import type { CrawlJobOptions, ScrapeJobOptions } from "../src/domain.js";
+import type { BrandingOutcome, BrandingService } from "../src/engine/branding.js";
 import type { CrawlSnapshot, PageResult, ScrapingEngine } from "../src/engine/types.js";
 import { InMemoryMetrics } from "../src/observability/metrics.js";
 import { MemoryStorage } from "../src/storage/object-storage.js";
@@ -20,6 +21,7 @@ export const fakeResolver: Resolver = async (host) => {
     "notfound.example.com": ["93.184.215.16"],
     "slow.example.com": ["93.184.215.17"],
     "site.example.com": ["93.184.215.18"],
+    "brandfail.example.com": ["93.184.215.19"],
     "rebind.example": ["10.0.0.7"],
     "mixed.example": ["93.184.215.19", "127.0.0.1"],
   };
@@ -123,10 +125,34 @@ export class FakeEngine implements ScrapingEngine {
   }
 }
 
+/** Branding stand-in: fixed result, or an error for hosts containing "brandfail". */
+export class FakeBranding implements BrandingService {
+  calls: string[] = [];
+  async extract(url: string): Promise<BrandingOutcome> {
+    this.calls.push(url);
+    if (url.includes("brandfail")) return { ok: false, error: { code: "TIMEOUT", message: "Branding extraction did not finish within the timeout" } };
+    return {
+      ok: true,
+      branding: {
+        final_url: url,
+        site_name: "Example",
+        logo: { url: "https://example.com/logo.png", image: "data:image/png;base64,iVBORw0KGgo=", source: "dom-img", alt: "Example", width: 120, height: 40, tone: "dark", colors: ["#112233"], confidence: "high" },
+        favicon: { url: "https://example.com/favicon.ico", sizes: null, type: null, source: "link" },
+        icons: [],
+        colors: { primary: "#6B8F71", secondary: "#B4795A", accent: null, background: "#FFFFFF", text: "#111111", palette: [{ hex: "#6B8F71", weight: 5, sources: ["buttons"] }], basis: "buttons", confidence: "high" },
+        fonts: { heading: "Georgia", body: "Arial" },
+        theme_color: null,
+        og_image: null,
+      },
+    };
+  }
+}
+
 export interface TestContext {
   app: FastifyInstance;
   db: Db;
   engine: FakeEngine;
+  branding: FakeBranding;
   storage: MemoryStorage;
   metrics: InMemoryMetrics;
   config: AppConfig;
@@ -145,7 +171,8 @@ export function testConfig(overrides: Partial<AppConfig> = {}): AppConfig {
     cookieSecure: false,
     sessionTtlHours: 1,
     allowSignup: true,
-    firecrawl: { apiUrl: "http://unused", apiKey: "x", requestTimeoutMs: 1000 },
+    firecrawl: { apiUrl: "http://unused", apiKey: "x", requestTimeoutMs: 1000, userAgent: "test" },
+    branding: { serviceUrl: "http://unused", timeoutMs: 1000 },
     storage: { driver: "local", localDir: "/tmp/unused" },
     urlPolicy: createPolicyConfig(),
     limits: {
@@ -177,9 +204,10 @@ export async function setup(overrides: Partial<AppConfig> = {}): Promise<TestCon
   const engine = new FakeEngine();
   const storage = new MemoryStorage();
   const metrics = new InMemoryMetrics();
-  const app = await buildApp({ config, db, engine, storage, metrics, resolver: fakeResolver });
+  const branding = new FakeBranding();
+  const app = await buildApp({ config, db, engine, branding, storage, metrics, resolver: fakeResolver });
   await app.ready();
-  return { app, db, engine, storage, metrics, config };
+  return { app, db, engine, branding, storage, metrics, config };
 }
 
 export async function teardown(ctx: TestContext) {

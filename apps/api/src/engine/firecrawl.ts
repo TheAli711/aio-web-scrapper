@@ -14,6 +14,10 @@
  *    exist self-hosted and then fails the whole scrape, so we always send `proxy: "basic"`.
  *  - Crawl `limit` has no upstream maximum; limits are enforced before we get here.
  *  - Crawl status `total` excludes failed pages; failures are read from /errors.
+ *  - Pages that render client-side come back empty (or "all engines failed") without a render
+ *    wait; scrape() retries those once with a short waitFor.
+ *  - The Playwright service picks a random User-Agent per page (often not Chrome), which bot
+ *    walls flag against its headless Chromium; we always send a fixed Chrome UA header.
  */
 import type { CrawlJobOptions, ScrapeJobOptions } from "../domain.js";
 import type { ErrorCode } from "../lib/errors.js";
@@ -24,6 +28,8 @@ export interface FirecrawlEngineConfig {
   apiKey: string;
   /** Extra time allowed on top of the scrape's own timeout for the HTTP round trip. */
   requestTimeoutMs: number;
+  /** Fixed User-Agent for target requests (see DEFAULT_USER_AGENT in config.ts). */
+  userAgent?: string;
 }
 
 interface FcDocument {
@@ -49,6 +55,10 @@ interface FcError {
 }
 
 const STATUS_PAGE_SIZE = 50;
+/** Render wait for the automatic retry of empty / JS-only pages. */
+const RENDER_WAIT_RETRY_MS = 5_000;
+/** Below this much Markdown a page is treated as "not rendered yet". */
+const THIN_MARKDOWN_CHARS = 200;
 const MAX_BATCHES_PER_CALL = 4;
 
 export class EngineUnavailableError extends Error {}
@@ -115,6 +125,7 @@ export class FirecrawlEngine implements ScrapingEngine {
       proxy: "basic",
       blockAds: true,
       removeBase64Images: true,
+      ...(this.cfg.userAgent ? { headers: { "User-Agent": this.cfg.userAgent } } : {}),
     };
   }
 
@@ -205,23 +216,40 @@ export class FirecrawlEngine implements ScrapingEngine {
   // ------------------------------------------------------------------ operations
 
   async scrape(url: string, options: ScrapeJobOptions, signal?: AbortSignal): Promise<PageResult> {
+    const first = await this.scrapeOnce(url, options, signal);
+    // JS-rendered sites (Square Online, Wix, some SPAs) come back empty without a render wait,
+    // and upstream then reports "all engines failed". One retry with a short wait fixes most.
+    if (options.waitForMs === 0 && !signal?.aborted && first.retryWithWait) {
+      const waitForMs = Math.min(RENDER_WAIT_RETRY_MS, Math.floor(options.timeoutMs / 2));
+      const second = await this.scrapeOnce(url, { ...options, waitForMs }, signal);
+      if (second.page.success || !first.page.success) return second.page;
+    }
+    return first.page;
+  }
+
+  private async scrapeOnce(url: string, options: ScrapeJobOptions, signal?: AbortSignal): Promise<{ page: PageResult; retryWithWait: boolean }> {
     const body = { url, ...this.scrapeOptions(options) };
     let res: { status: number; json: { success?: boolean; data?: FcDocument } & FcError };
     try {
       res = await this.request("POST", "/v2/scrape", body, options.timeoutMs + this.cfg.requestTimeoutMs, signal);
     } catch (err) {
       if ((err as { kind?: string }).kind === "timeout") {
-        return failed(url, { code: "TIMEOUT", message: "The page did not finish loading within the timeout" });
+        return { page: failed(url, { code: "TIMEOUT", message: "The page did not finish loading within the timeout" }), retryWithWait: false };
       }
       if ((err as { kind?: string }).kind === "aborted") {
-        return failed(url, { code: "INTERRUPTED", message: "The scrape was cancelled" });
+        return { page: failed(url, { code: "INTERRUPTED", message: "The scrape was cancelled" }), retryWithWait: false };
       }
       throw err;
     }
     if (res.status === 200 && res.json.success && res.json.data) {
-      return FirecrawlEngine.toPageResult(res.json.data, url);
+      const page = FirecrawlEngine.toPageResult(res.json.data, url);
+      const thin = page.success && (page.markdown ?? "").trim().length < THIN_MARKDOWN_CHARS;
+      return { page, retryWithWait: thin };
     }
-    return failed(url, FirecrawlEngine.mapError(res.json.code, res.json.error, res.status));
+    const error = FirecrawlEngine.mapError(res.json.code, res.json.error, res.status);
+    // "All engines failed" with no network-level cause usually means the page was too empty.
+    const retryWithWait = res.json.code === "SCRAPE_ALL_ENGINES_FAILED" && error.code === "CONNECTION_FAILED";
+    return { page: failed(url, error), retryWithWait };
   }
 
   async crawl(url: string, o: CrawlJobOptions): Promise<{ engineJobId: string }> {

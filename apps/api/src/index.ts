@@ -3,6 +3,7 @@ import { loadConfig } from "./config.js";
 import { migrate } from "./db/migrate.js";
 import { createPool } from "./db/pool.js";
 import { sessions } from "./db/repos.js";
+import { HttpBrandingService } from "./engine/branding.js";
 import { FirecrawlEngine } from "./engine/firecrawl.js";
 import { InMemoryMetrics } from "./observability/metrics.js";
 import { LocalFsStorage } from "./storage/object-storage.js";
@@ -11,10 +12,11 @@ async function main() {
   const config = loadConfig();
   const db = createPool(config.databaseUrl);
   const engine = new FirecrawlEngine(config.firecrawl);
+  const branding = new HttpBrandingService(config.branding);
   const storage = new LocalFsStorage(config.storage.localDir);
   const metrics = new InMemoryMetrics();
 
-  const app = await buildApp({ config, db, engine, storage, metrics });
+  const app = await buildApp({ config, db, engine, branding, storage, metrics });
 
   if (process.env.MIGRATE_ON_START !== "false") {
     const applied = await migrate(db, (m) => app.log.info(m));

@@ -86,7 +86,8 @@ export const jobRoutes: FastifyPluginAsyncTypebox<JobRouteOptions> = async (app,
       const job = await jobsSvc.create(principal, "scrape", req.body);
       if (req.query.wait) {
         const opts = job.options as ScrapeJobOptions;
-        const deadline = Date.now() + opts.timeoutMs + 30_000;
+        // Branding loads the page again in its own browser; allow for it.
+        const deadline = Date.now() + opts.timeoutMs + 30_000 + (opts.formats.includes("branding") ? 60_000 : 0);
         let current = job;
         // Stop early if the client hangs up (the socket, not req.raw: the request stream is
         // auto-destroyed as soon as its body has been read).

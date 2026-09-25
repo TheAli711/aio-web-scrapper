@@ -10,6 +10,7 @@
  */
 import type { ErrorCode } from "../lib/errors.js";
 import type { CrawlJobOptions, OutputFormat, ScrapeJobOptions } from "../domain.js";
+import type { BrandingOutcome } from "./branding.js";
 
 export interface EngineError {
   code: ErrorCode;
@@ -30,6 +31,8 @@ export interface PageResult {
   html?: string;
   text?: string;
   links?: string[];
+  /** Set by JobService when the "branding" format was requested. */
+  branding?: BrandingOutcome;
   /** Small, bounded metadata (description, language, og tags ...). */
   metadata: Record<string, unknown>;
 }

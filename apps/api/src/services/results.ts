@@ -51,6 +51,8 @@ export function applySizeLimit(content: ResultContent, maxBytes: number): { cont
   const c: ResultContent = { ...content };
   const size = () => Buffer.byteLength(JSON.stringify(c));
   if (c.links && c.links.length > 1000) c.links = c.links.slice(0, 1000);
+  // The rendered logo PNG is a convenience copy; the logo URL survives.
+  if (c.branding?.logo?.image && size() > maxBytes) c.branding = { ...c.branding, logo: { ...c.branding.logo, image: null } };
   for (const field of ["html", "text", "markdown"] as const) {
     const over = size() - maxBytes;
     if (over <= 0) break;
@@ -94,6 +96,10 @@ export class ResultService {
       if (formats.includes("html")) raw.html = page.html ?? "";
       if (formats.includes("text")) raw.text = page.text ?? (page.html ? htmlToText(page.html) : page.markdown ?? "");
       if (page.links) raw.links = page.links.slice(0, MAX_LINKS);
+      if (formats.includes("branding")) {
+        raw.branding = page.branding?.ok ? page.branding.branding : null;
+        raw.branding_error = page.branding && !page.branding.ok ? page.branding.error : null;
+      }
       linksCount = page.links?.length ?? 0;
       const limited = applySizeLimit(raw, this.maxResultBytes);
       truncated = limited.truncated;

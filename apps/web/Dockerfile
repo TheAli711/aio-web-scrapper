@@ -19,6 +19,7 @@ ENV NEXT_TELEMETRY_DISABLED=1
 # all of them, then install only what @ws/web needs.
 COPY package.json package-lock.json ./
 COPY apps/web/package.json apps/web/package.json
+COPY apps/brand-service/package.json apps/brand-service/package.json
 COPY apps/api/package.json apps/api/package.json
 COPY apps/egress-proxy/package.json apps/egress-proxy/package.json
 COPY packages/net-policy/package.json packages/net-policy/package.json

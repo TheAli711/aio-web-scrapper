@@ -81,7 +81,7 @@ curl:
 | Field | Applies to | Default | Notes |
 |---|---|---|---|
 | `url` | both | required | http/https only, public hosts only |
-| `formats` | both | `["markdown"]` | any of `markdown`, `html`, `text` |
+| `formats` | both | `["markdown"]` | any of `markdown`, `html`, `text`; scrape only: `branding` (logo, favicon, brand colors, fonts in `content.branding`; adds ~15–30 s) |
 | `only_main_content` | both | `true` | strips nav, header and footer |
 | `timeout_ms` | both | 30000 | per page; server max 90000 |
 | `wait_for_ms` | both | 0 | extra wait after load for JS-heavy pages; ≤ timeout_ms/2 |

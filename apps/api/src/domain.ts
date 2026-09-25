@@ -1,11 +1,12 @@
+import type { Branding } from "./engine/branding.js";
 import type { ErrorCode } from "./lib/errors.js";
 
 export type JobType = "scrape" | "crawl";
 export type JobStatus = "queued" | "running" | "completed" | "failed" | "cancelled";
 export const TERMINAL_STATUSES: ReadonlySet<JobStatus> = new Set(["completed", "failed", "cancelled"]);
 
-export type OutputFormat = "markdown" | "html" | "text";
-export const OUTPUT_FORMATS: readonly OutputFormat[] = ["markdown", "html", "text"];
+export type OutputFormat = "markdown" | "html" | "text" | "branding";
+export const OUTPUT_FORMATS: readonly OutputFormat[] = ["markdown", "html", "text", "branding"];
 
 export interface User {
   id: string;
@@ -104,6 +105,9 @@ export interface ResultContent {
   html?: string;
   text?: string;
   links?: string[];
+  /** Present when the "branding" format was requested (null when extraction failed). */
+  branding?: Branding | null;
+  branding_error?: { code: string; message: string } | null;
 }
 
 /** Who is making a request: a dashboard session or an API key. */

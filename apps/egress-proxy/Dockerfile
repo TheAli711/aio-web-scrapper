@@ -6,6 +6,7 @@ COPY packages/net-policy/package.json packages/net-policy/
 COPY apps/api/package.json apps/api/
 COPY apps/egress-proxy/package.json apps/egress-proxy/
 COPY apps/web/package.json apps/web/
+COPY apps/brand-service/package.json apps/brand-service/
 RUN npm ci --workspace @ws/egress-proxy --workspace @ws/net-policy --include-workspace-root=false --ignore-scripts
 COPY packages/net-policy packages/net-policy
 COPY apps/egress-proxy apps/egress-proxy

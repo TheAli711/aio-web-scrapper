@@ -5,8 +5,10 @@
 
 export type JobStatus = "queued" | "running" | "completed" | "failed" | "cancelled";
 export type JobType = "scrape" | "crawl";
-export type OutputFormat = "markdown" | "html" | "text";
-export type DownloadFormat = OutputFormat | "json";
+/** "branding" is scrape-only; the API rejects it for crawl jobs. */
+export type OutputFormat = "markdown" | "html" | "text" | "branding";
+/** Branding is only available inside the full JSON download. */
+export type DownloadFormat = Exclude<OutputFormat, "branding"> | "json";
 
 export const JOB_STATUSES: JobStatus[] = ["queued", "running", "completed", "failed", "cancelled"];
 export const ACTIVE_STATUSES: JobStatus[] = ["queued", "running"];
@@ -101,11 +103,70 @@ export interface ResultListItem extends ResultSummary {
   job_type: JobType;
 }
 
+export type Confidence = "high" | "medium" | "low";
+
+export interface BrandingLogo {
+  /** http(s) URL, or a data:image/svg+xml URI for inline SVG logos. */
+  url: string | null;
+  /** PNG data URI of the logo as rendered on the page. */
+  image: string | null;
+  /** dom-img | dom-svg | dom-background | json-ld | icon */
+  source: string;
+  alt: string | null;
+  width: number | null;
+  height: number | null;
+  /** dark = logo meant for light backgrounds; light = meant for dark backgrounds. */
+  tone: "dark" | "light" | "color" | null;
+  colors: string[];
+  confidence: Confidence;
+}
+
+export interface BrandingFavicon {
+  url: string;
+  sizes: string | null;
+  type: string | null;
+  source: string;
+}
+
+export interface BrandingIcon {
+  url: string;
+  rel: string;
+  sizes: string | null;
+  type: string | null;
+}
+
+export interface BrandingColors {
+  /** All colours are "#RRGGBB". */
+  primary: string | null;
+  secondary: string | null;
+  accent: string | null;
+  background: string | null;
+  text: string | null;
+  palette: Array<{ hex: string; weight: number; sources: string[] }>;
+  basis: string;
+  confidence: Confidence;
+}
+
+export interface Branding {
+  final_url: string | null;
+  site_name: string | null;
+  logo: BrandingLogo | null;
+  favicon: BrandingFavicon | null;
+  icons: BrandingIcon[];
+  colors: BrandingColors;
+  fonts: { heading: string | null; body: string | null };
+  theme_color: string | null;
+  og_image: string | null;
+}
+
 export interface ResultContent {
   markdown?: string;
   html?: string;
   text?: string;
   links?: string[];
+  /** Present when the "branding" format was requested; null when extraction failed. */
+  branding?: Branding | null;
+  branding_error?: ErrorInfo | null;
 }
 
 export interface ResultWithContent extends ResultSummary {
