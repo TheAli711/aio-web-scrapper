@@ -21,7 +21,8 @@
  *  - Storefront bot filters (e.g. Blockify on Shopify) send browsers reporting navigator.webdriver
  *    to google.com from page JS. Firecrawl still reports the requested URL and status, so the
  *    search homepage comes back as a "successful" scrape. scrape() detects that and retries with
- *    fastMode (the plain-HTTP fetch engine, no JS), which gets the server-rendered page.
+ *    fastMode (the plain-HTTP fetch engine, no JS), which gets the server-rendered page; crawl()
+ *    probes the start page the same way and crawls such sites with fastMode.
  */
 import type { CrawlJobOptions, ScrapeJobOptions } from "../domain.js";
 import type { ErrorCode } from "../lib/errors.js";
@@ -64,6 +65,8 @@ const RENDER_WAIT_RETRY_MS = 5_000;
 /** Below this much Markdown a page is treated as "not rendered yet". */
 const THIN_MARKDOWN_CHARS = 200;
 const MAX_BATCHES_PER_CALL = 4;
+/** Start-page probe before a crawl (see bouncesBrowser). */
+const CRAWL_PROBE_TIMEOUT_MS = 15_000;
 
 /** Where bot filters send detected browsers: page title, and the hosts that legitimately have it. */
 const BOT_BOUNCE_TARGETS = [
@@ -278,6 +281,8 @@ export class FirecrawlEngine implements ScrapingEngine {
 
   async crawl(url: string, o: CrawlJobOptions): Promise<{ engineJobId: string }> {
     const start = new URL(url);
+    // A bot filter that bounces the browser bounces every page, so crawl such sites without JS.
+    const noJs = await this.bouncesBrowser(url, o);
     const body = {
       url,
       limit: o.maxPages,
@@ -288,7 +293,7 @@ export class FirecrawlEngine implements ScrapingEngine {
       allowSubdomains: o.allowSubdomains || start.hostname !== o.allowedDomain,
       crawlEntireDomain: true,
       sitemap: "include",
-      scrapeOptions: this.scrapeOptions(o),
+      scrapeOptions: this.scrapeOptions(o, noJs),
     };
     const res = await this.request<{ success?: boolean; id?: string } & FcError>("POST", "/v2/crawl", body);
     if (res.status === 200 && res.json.success && res.json.id) return { engineJobId: res.json.id };
@@ -297,6 +302,16 @@ export class FirecrawlEngine implements ScrapingEngine {
     }
     const e = FirecrawlEngine.mapError(res.json.code, res.json.error, res.status);
     throw Object.assign(new Error(e.message), { engineError: e });
+  }
+
+  /** Probe the start page; bounded well inside the 30s dispatch lease. Any failure means "no". */
+  private async bouncesBrowser(url: string, o: CrawlJobOptions): Promise<boolean> {
+    try {
+      const probe = await this.scrapeOnce(url, { ...o, timeoutMs: CRAWL_PROBE_TIMEOUT_MS, waitForMs: 0 }, AbortSignal.timeout(CRAWL_PROBE_TIMEOUT_MS + 5_000));
+      return probe.page.error === BOT_BOUNCE_ERROR;
+    } catch {
+      return false;
+    }
   }
 
   async getJobStatus(engineJobId: string, cursor: number): Promise<CrawlSnapshot> {

@@ -151,6 +151,16 @@ describe("FirecrawlEngine render-wait retry", () => {
     expect(google.success).toBe(true);
   });
 
+  it("crawls sites that bounce the browser without JS", async () => {
+    const crawlOpts = { ...opts, maxDepth: 2, maxPages: 10, includePatterns: [], excludePatterns: [], allowedDomain: "shop.dev", allowSubdomains: false };
+    await withFetch([bounced, { success: true, id: "c1" }, full, { success: true, id: "c2" }], async (bodies) => {
+      await engine.crawl("https://shop.dev/", crawlOpts);
+      expect((bodies[1]!.scrapeOptions as Record<string, unknown>).fastMode).toBe(true);
+      await engine.crawl("https://a.dev/", { ...crawlOpts, allowedDomain: "a.dev" });
+      expect((bodies[3]!.scrapeOptions as Record<string, unknown>).fastMode).toBeUndefined();
+    });
+  });
+
   it("does not retry a full page or a caller-chosen wait", async () => {
     await withFetch([full], async (bodies) => {
       await engine.scrape("https://a.dev/", opts);
