@@ -131,6 +131,26 @@ describe("FirecrawlEngine render-wait retry", () => {
     });
   });
 
+  const bounced = { success: true, data: { markdown: "x".repeat(2000), metadata: { title: "Google", statusCode: 200, sourceURL: "https://shop.dev/" } } };
+
+  it("retries a page bounced to a search engine by bot filters without JS", async () => {
+    await withFetch([bounced, { ...full, data: { ...full.data, metadata: { title: "Shop", statusCode: 200, sourceURL: "https://shop.dev/" } } }], async (bodies) => {
+      const page = await engine.scrape("https://shop.dev/", { ...opts, waitForMs: 2000 });
+      expect(page).toMatchObject({ success: true, title: "Shop" });
+      expect(bodies.map((b) => [b.fastMode, b.waitFor])).toEqual([[undefined, 2000], [true, 0]]);
+    });
+  });
+
+  it("fails a bounced page instead of returning the search homepage", async () => {
+    await withFetch([bounced, { success: false, code: "SCRAPE_ALL_ENGINES_FAILED", error: "x" }], async () => {
+      const page = await engine.scrape("https://shop.dev/", opts);
+      expect(page).toMatchObject({ success: false, error: { code: "EXTRACTION_FAILED" } });
+      expect(page.markdown).toBeUndefined();
+    });
+    const google = FirecrawlEngine.toPageResult({ markdown: "x", metadata: { title: "Google", statusCode: 200, sourceURL: "https://www.google.com/" } }, "");
+    expect(google.success).toBe(true);
+  });
+
   it("does not retry a full page or a caller-chosen wait", async () => {
     await withFetch([full], async (bodies) => {
       await engine.scrape("https://a.dev/", opts);

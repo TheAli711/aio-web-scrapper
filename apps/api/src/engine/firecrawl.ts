@@ -18,6 +18,10 @@
  *    wait; scrape() retries those once with a short waitFor.
  *  - The Playwright service picks a random User-Agent per page (often not Chrome), which bot
  *    walls flag against its headless Chromium; we always send a fixed Chrome UA header.
+ *  - Storefront bot filters (e.g. Blockify on Shopify) send browsers reporting navigator.webdriver
+ *    to google.com from page JS. Firecrawl still reports the requested URL and status, so the
+ *    search homepage comes back as a "successful" scrape. scrape() detects that and retries with
+ *    fastMode (the plain-HTTP fetch engine, no JS), which gets the server-rendered page.
  */
 import type { CrawlJobOptions, ScrapeJobOptions } from "../domain.js";
 import type { ErrorCode } from "../lib/errors.js";
@@ -60,6 +64,16 @@ const RENDER_WAIT_RETRY_MS = 5_000;
 /** Below this much Markdown a page is treated as "not rendered yet". */
 const THIN_MARKDOWN_CHARS = 200;
 const MAX_BATCHES_PER_CALL = 4;
+
+/** Where bot filters send detected browsers: page title, and the hosts that legitimately have it. */
+const BOT_BOUNCE_TARGETS = [
+  { title: /^google$/i, host: /(^|\.)google\.[a-z.]+$/i },
+  { title: /^(bing|search - microsoft bing)$/i, host: /(^|\.)bing\.com$/i },
+];
+const BOT_BOUNCE_ERROR: EngineError = {
+  code: "EXTRACTION_FAILED",
+  message: "The site's bot protection redirected the browser away from the page",
+};
 
 export class EngineUnavailableError extends Error {}
 
@@ -113,9 +127,10 @@ export class FirecrawlEngine implements ScrapingEngine {
 
   // ------------------------------------------------------------------ mapping
 
-  private scrapeOptions(o: ScrapeJobOptions) {
+  /** `noJs` selects Firecrawl's fetch engine (fastMode), which requires waitFor 0. */
+  private scrapeOptions(o: ScrapeJobOptions, noJs = false) {
     // Firecrawl requires waitFor <= timeout / 2.
-    const waitFor = Math.min(o.waitForMs, Math.floor(o.timeoutMs / 2));
+    const waitFor = noJs ? 0 : Math.min(o.waitForMs, Math.floor(o.timeoutMs / 2));
     return {
       // html also feeds our derived "text" output; links are always captured for metadata.
       formats: ["markdown", "html", "links"],
@@ -125,6 +140,7 @@ export class FirecrawlEngine implements ScrapingEngine {
       proxy: "basic",
       blockAds: true,
       removeBase64Images: true,
+      ...(noJs ? { fastMode: true } : {}),
       ...(this.cfg.userAgent ? { headers: { "User-Agent": this.cfg.userAgent } } : {}),
     };
   }
@@ -150,6 +166,9 @@ export class FirecrawlEngine implements ScrapingEngine {
         error: { code: "BLOCKED_URL", message: "The request (or a redirect) targeted a non-public address and was blocked" },
         metadata: {},
       };
+    }
+    if (isBotBounce(title, url)) {
+      return { url, finalUrl, statusCode, success: false, error: BOT_BOUNCE_ERROR, metadata: {} };
     }
     if (statusCode !== undefined && statusCode >= 400) {
       error = { code: "HTTP_ERROR", message: `Target responded with HTTP ${statusCode}` };
@@ -217,6 +236,11 @@ export class FirecrawlEngine implements ScrapingEngine {
 
   async scrape(url: string, options: ScrapeJobOptions, signal?: AbortSignal): Promise<PageResult> {
     const first = await this.scrapeOnce(url, options, signal);
+    // Page JS bounced the browser to a search engine: the server-rendered HTML is the real page.
+    if (first.page.error === BOT_BOUNCE_ERROR && !signal?.aborted) {
+      const second = await this.scrapeOnce(url, options, signal, true);
+      return second.page.success ? second.page : first.page;
+    }
     // JS-rendered sites (Square Online, Wix, some SPAs) come back empty without a render wait,
     // and upstream then reports "all engines failed". One retry with a short wait fixes most.
     if (options.waitForMs === 0 && !signal?.aborted && first.retryWithWait) {
@@ -227,8 +251,8 @@ export class FirecrawlEngine implements ScrapingEngine {
     return first.page;
   }
 
-  private async scrapeOnce(url: string, options: ScrapeJobOptions, signal?: AbortSignal): Promise<{ page: PageResult; retryWithWait: boolean }> {
-    const body = { url, ...this.scrapeOptions(options) };
+  private async scrapeOnce(url: string, options: ScrapeJobOptions, signal?: AbortSignal, noJs = false): Promise<{ page: PageResult; retryWithWait: boolean }> {
+    const body = { url, ...this.scrapeOptions(options, noJs) };
     let res: { status: number; json: { success?: boolean; data?: FcDocument } & FcError };
     try {
       res = await this.request("POST", "/v2/scrape", body, options.timeoutMs + this.cfg.requestTimeoutMs, signal);
@@ -349,6 +373,18 @@ export class FirecrawlEngine implements ScrapingEngine {
 
 function failed(url: string, error: EngineError): PageResult {
   return { url, success: false, error, metadata: {} };
+}
+
+function isBotBounce(title: string | undefined, url: string): boolean {
+  const t = typeof title === "string" ? title.trim() : "";
+  if (!t) return false;
+  let host: string;
+  try {
+    host = new URL(url).hostname;
+  } catch {
+    return false;
+  }
+  return BOT_BOUNCE_TARGETS.some((b) => b.title.test(t) && !b.host.test(host));
 }
 
 function mapCrawlStatus(s: string | undefined): EngineJobStatus {
