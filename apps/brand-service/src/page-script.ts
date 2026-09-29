@@ -347,9 +347,25 @@ export function collectSignals(maxElements: number): RawSignals {
   colors.footer = footers.length ? bgOf(footers[footers.length - 1]!) : null;
   colors.body = solid(getComputedStyle(document.body).backgroundColor) ?? solid(getComputedStyle(document.documentElement).backgroundColor);
 
-  const fontOf = (sel: string) => {
-    const el = document.querySelector(sel);
-    return el ? getComputedStyle(el).fontFamily.split(",")[0]!.replace(/["']/g, "").trim() || null : null;
+  // First real family name of an element that shows text. Skips image-replacement headings
+  // (Bootstrap .text-hide is `font: 0/0 a`, a logo <h1> with no text) and junk family tokens.
+  const familyOf = (el: Element): string | null => {
+    for (const part of getComputedStyle(el).fontFamily.split(",")) {
+      const f = part.replace(/["']/g, "").trim();
+      if (/\p{L}{2}/u.test(f) && !/^(inherit|initial|unset|revert|revert-layer|none|var\(.*)$/i.test(f)) return f;
+    }
+    return null;
+  };
+  const fontOf = (sel: string): string | null => {
+    let fallback: string | null = null;
+    for (const el of Array.from(document.querySelectorAll(sel)).slice(0, 30)) {
+      if (!(el.textContent || "").trim() || parseFloat(getComputedStyle(el).fontSize) < 4) continue;
+      const f = familyOf(el);
+      if (!f) continue;
+      if (el.getClientRects().length) return f;
+      fallback ??= f;
+    }
+    return fallback;
   };
 
   // Named brand variables used by common builders (Elementor, Astra, Squarespace, Shopify themes ...).

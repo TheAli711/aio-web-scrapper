@@ -82,4 +82,27 @@ describe("logoInk", () => {
     expect(logoInk([{ rgb: [198, 60, 145], weight: 0.6 }, { rgb: [0, 0, 0], weight: 0.4 }]).tone).toBe("color");
     expect(logoInk([]).tone).toBeNull();
   });
+
+  it("keeps a small saturated brand color ahead of anti-aliasing greys", () => {
+    // Black wordmark with an orange "hive" and grey tagline, JPEG on white (shophive.com).
+    const ink: Array<{ rgb: RGB; weight: number }> = [
+      { rgb: [54, 53, 58], weight: 0.2 }, { rgb: [27, 26, 27], weight: 0.08 }, { rgb: [69, 75, 84], weight: 0.06 },
+      { rgb: [220, 219, 220], weight: 0.1 }, { rgb: [188, 188, 188], weight: 0.08 }, { rgb: [203, 203, 203], weight: 0.07 },
+      { rgb: [116, 116, 116], weight: 0.09 }, { rgb: [147, 147, 147], weight: 0.06 }, { rgb: [131, 131, 132], weight: 0.05 },
+      { rgb: [244, 106, 60], weight: 0.03 }, { rgb: [245, 117, 75], weight: 0.02 }, { rgb: [244, 102, 58], weight: 0.015 },
+      { rgb: [251, 186, 51], weight: 0.02 }, { rgb: [252, 173, 52], weight: 0.015 },
+    ];
+    const { tone, colors } = logoInk(ink);
+    expect(tone).toBe("dark");
+    expect(colors[0]).toBe("#36353A");
+    expect(colors[1]).toBe("#F46A3C");
+    expect(colors).toContain("#FBBA33");
+  });
+
+  it("does not promote faint color noise in a monochrome logo", () => {
+    const { colors } = logoInk([
+      { rgb: [10, 10, 10], weight: 0.8 }, { rgb: [128, 128, 128], weight: 0.18 }, { rgb: [200, 60, 60], weight: 0.02 },
+    ]);
+    expect(colors).toEqual(["#0A0A0A", "#808080"]);
+  });
 });

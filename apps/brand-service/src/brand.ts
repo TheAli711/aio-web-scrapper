@@ -93,6 +93,42 @@ export function pickFavicon(icons: RawIcon[], pageUrl: string): Favicon {
   return { url: new URL("/favicon.ico", pageUrl).href, sizes: null, type: null, source: "default" };
 }
 
+/** Letters and digits only, lowercased: "Shophive!" -> "shophive", "Shop-Hive.com" -> "shophivecom". */
+const nameKey = (s: string) => s.normalize("NFKD").toLowerCase().replace(/[^\p{L}\p{N}]+/gu, "");
+
+/**
+ * Site name when the page declares none (og:site_name / application-name): a title segment or
+ * the logo's alt / wordmark text, but only when it spells the domain name ("SHOPHIVE" on
+ * shophive.com). Mixed case beats all caps ("Shophive" over "SHOPHIVE"); names that only
+ * resemble the domain are not guessed.
+ */
+export function inferSiteName(title: string, pageUrl: string, logoTexts: Array<string | null | undefined>): string | null {
+  let host: string;
+  try {
+    host = new URL(pageUrl).hostname.toLowerCase().replace(/^www\d*\./, "");
+  } catch {
+    return null;
+  }
+  // Registrable name only ("shophive" in www.shophive.com or shophive.com.pk), never a subdomain
+  // label like "shop" or "blog", plus the bare domain ("Shophive.com").
+  const labels = host.split(".");
+  if (labels.length < 2) return null;
+  const at = labels.length >= 3 && /^(co|com|net|org|gov|edu|ac|or|ne|go|gob)$/.test(labels[labels.length - 2]!) ? labels.length - 3 : labels.length - 2;
+  const keys = new Set([nameKey(labels[at]!), nameKey(labels.slice(at).join("."))].filter((k) => k.length >= 3));
+  const clean = (s: string) =>
+    s
+      .replace(/\s+/g, " ")
+      .replace(/\s*(official\s+)?(logo|home(page)?)$/i, "")
+      .replace(/^[\s\p{P}\p{S}]+|[\s\p{P}\p{S}]+$/gu, "")
+      .trim();
+  const candidates = [
+    ...logoTexts.map((t) => clean(t ?? "")),
+    ...title.split(/\s*[|\u00b7\u00bb\u2022]\s*|\s+[-\u2013\u2014]\s+|:\s+/).map(clean),
+  ].filter((c) => c.length >= 2 && c.length <= 60 && keys.has(nameKey(c)));
+  if (!candidates.length) return null;
+  return candidates.find((c) => /\p{Ll}/u.test(c)) ?? candidates[0]!;
+}
+
 function logoConfidence(c: RawLogoCandidate): Logo["confidence"] {
   const strong = c.reasons.includes("logo-attr") || c.reasons.includes("home-link");
   if (c.score >= 9 && strong) return "high";
@@ -236,7 +272,7 @@ export async function extractBrand(browser: Browser, url: string, opts: BrandOpt
       final_url: raw.finalUrl,
       status_code: status,
       title: raw.title,
-      site_name: raw.siteName,
+      site_name: raw.siteName ?? inferSiteName(raw.title, raw.finalUrl, logo?.source.startsWith("dom") ? [logo.text, logo.alt] : []),
       logo,
       logo_candidates: raw.logoCandidates.slice(0, 3).map((c) => ({ url: c.url && c.url.length > 300 ? c.url.slice(0, 300) + "…" : c.url, kind: c.kind, score: c.score, reasons: c.reasons })),
       favicon: pickFavicon(raw.icons, raw.finalUrl),

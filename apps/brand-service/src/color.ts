@@ -118,19 +118,34 @@ export function cluster(colors: WeightedColor[], threshold = 12): WeightedColor[
  * Summarise a logo's ink (pixels that differ from its backdrop): main colors and tone.
  * Tone: "dark" logo for light backgrounds, "light" logo for dark backgrounds, "color" when a
  * saturated color carries a real share. Mid-grey anti-aliasing pixels are ignored for tone.
+ *
+ * Colors: a saturated color is what a viewer reads as "the logo's color" even when it covers
+ * little area (an orange icon next to a black wordmark), so it needs a smaller share to count
+ * and ranks ahead of mid/light greys, which on text logos are mostly anti-aliasing between the
+ * ink and the backdrop (plus JPEG ringing).
  */
 export function logoInk(palette: Array<{ rgb: RGB; weight: number }>): { tone: "dark" | "light" | "color" | null; colors: string[] } {
   if (!palette.length) return { tone: null, colors: [] };
+  const chromatic = (c: RGB) => {
+    const { s, l } = hsl(c);
+    return s > 0.3 && l > 0.15 && l < 0.85;
+  };
   let dark = 0, light = 0, chroma = 0;
   for (const { rgb, weight } of palette) {
-    const { s, l } = hsl(rgb);
-    if (s > 0.3 && l > 0.15 && l < 0.85) chroma += weight;
+    const { l } = hsl(rgb);
+    if (chromatic(rgb)) chroma += weight;
     else if (l < 0.4) dark += weight;
     else if (l > 0.75) light += weight;
   }
   const tone = chroma >= 0.3 ? "color" : dark >= light ? "dark" : "light";
+  const rank = (c: WeightedColor) => {
+    if (chromatic(c.rgb)) return c.weight * 3;
+    const { l } = hsl(c.rgb);
+    return l < 0.3 || l > 0.9 ? c.weight : c.weight * 0.5;
+  };
   const colors = cluster(palette.map((p) => ({ rgb: p.rgb, weight: p.weight, sources: new Set(["logo"]) })), 18)
-    .filter((c) => c.weight >= 0.08)
+    .filter((c) => c.weight >= (chromatic(c.rgb) ? 0.03 : 0.08))
+    .sort((a, b) => rank(b) - rank(a))
     .slice(0, 4)
     .map((c) => toHex(c.rgb));
   return { tone, colors };
