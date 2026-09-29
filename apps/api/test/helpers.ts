@@ -6,7 +6,7 @@ import { migrate } from "../src/db/migrate.js";
 import { createPool, type Db } from "../src/db/pool.js";
 import type { CrawlJobOptions, ScrapeJobOptions } from "../src/domain.js";
 import type { BrandingOutcome, BrandingService } from "../src/engine/branding.js";
-import type { CrawlSnapshot, PageResult, ScrapingEngine } from "../src/engine/types.js";
+import type { CrawlSnapshot, MapOptions, MapResult, PageResult, ScrapingEngine } from "../src/engine/types.js";
 import { InMemoryMetrics } from "../src/observability/metrics.js";
 import { MemoryStorage } from "../src/storage/object-storage.js";
 
@@ -120,6 +120,14 @@ export class FakeEngine implements ScrapingEngine {
     if (c) c.status = "cancelled";
   }
 
+  async map(url: string, options: MapOptions): Promise<MapResult> {
+    if (new URL(url).hostname === "slow.example.com") {
+      return { urls: [], platform: null, productUrls: 0, error: { code: "TIMEOUT", message: "The page did not finish loading within the timeout" } };
+    }
+    const urls = [url, new URL("/products/a", url).href, new URL("/products/b", url).href, new URL("/about", url).href];
+    return { urls: urls.slice(0, options.limit), platform: "shopify", productUrls: 2 };
+  }
+
   async health() {
     return this.healthy;
   }
@@ -185,6 +193,7 @@ export function testConfig(overrides: Partial<AppConfig> = {}): AppConfig {
       maxResultBytes: 1024 * 1024,
       maxActiveJobsPerUser: 5,
       maxCrawlDurationMs: 3600000,
+      maxMapUrls: 3,
     },
     rateLimit: { perMinute: 1000, jobCreatePerMinute: 1000, authPerMinute: 1000 },
     reconcileIntervalMs: 60_000,

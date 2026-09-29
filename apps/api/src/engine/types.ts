@@ -54,6 +54,24 @@ export interface CrawlSnapshot {
   error?: EngineError;
 }
 
+export interface MapOptions {
+  limit: number;
+  includePatterns: string[];
+  excludePatterns: string[];
+  allowedDomain: string;
+  allowSubdomains: boolean;
+}
+
+export interface MapResult {
+  /** Site URLs: the start URL, store catalog products, sitemap entries, then start-page links. */
+  urls: string[];
+  /** Store platform whose catalog supplied product URLs, if any. */
+  platform: string | null;
+  productUrls: number;
+  /** Why nothing could be listed (e.g. the start page failed to load). */
+  error?: EngineError;
+}
+
 export interface ScrapingEngine {
   readonly name: string;
 
@@ -70,6 +88,9 @@ export interface ScrapingEngine {
   getFailures(engineJobId: string): Promise<PageResult[]>;
 
   cancel(engineJobId: string): Promise<void>;
+
+  /** List a site's URLs without scraping them. */
+  map(url: string, options: MapOptions): Promise<MapResult>;
 
   health(): Promise<boolean>;
 }

@@ -216,11 +216,34 @@ export interface ScrapeRequest {
   wait_for_ms?: number;
 }
 
-export interface CrawlRequest extends ScrapeRequest {
-  max_depth?: number;
-  max_pages?: number;
+/** Which URLs a crawl follows or a map lists. */
+export interface UrlScope {
   include_patterns?: string[];
   exclude_patterns?: string[];
   allowed_domain?: string;
   allow_subdomains?: boolean;
+}
+
+export interface CrawlRequest extends ScrapeRequest, UrlScope {
+  max_depth?: number;
+  max_pages?: number;
+}
+
+/** Synchronous URL discovery: no job is created and nothing is stored. */
+export interface MapRequest extends UrlScope {
+  url: string;
+  limit?: number;
+}
+
+export type StorePlatform = "magento" | "shopify" | "woocommerce";
+
+export interface MapResult {
+  url: string;
+  /** Store platform whose public catalog supplied product URLs, if any. */
+  platform: StorePlatform | null;
+  /** How many of `urls` came from the store catalog. */
+  product_urls: number;
+  count: number;
+  /** Start URL first, then catalog products, sitemap entries and links on the start page. */
+  urls: string[];
 }

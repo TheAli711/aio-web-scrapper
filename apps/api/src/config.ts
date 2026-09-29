@@ -35,6 +35,7 @@ export interface Limits {
   maxResultBytes: number;
   maxActiveJobsPerUser: number;
   maxCrawlDurationMs: number;
+  maxMapUrls: number;
 }
 
 /**
@@ -94,7 +95,7 @@ export function loadConfig(): AppConfig {
       allowedPorts: process.env.URL_POLICY_ALLOWED_PORTS ?? "",
     }),
     limits: {
-      maxCrawlPages: int("MAX_CRAWL_PAGES", 500, 1, 100_000),
+      maxCrawlPages: int("MAX_CRAWL_PAGES", 2000, 1, 100_000),
       maxCrawlDepth: int("MAX_CRAWL_DEPTH", 10, 0, 100),
       maxPatterns: 20,
       maxPatternLength: 200,
@@ -103,6 +104,7 @@ export function loadConfig(): AppConfig {
       maxResultBytes: int("MAX_RESULT_BYTES", 5 * 1024 * 1024, 1024),
       maxActiveJobsPerUser: int("MAX_ACTIVE_JOBS_PER_USER", 10, 1),
       maxCrawlDurationMs: int("MAX_CRAWL_DURATION_MS", 60 * 60 * 1000, 60_000),
+      maxMapUrls: int("MAX_MAP_URLS", 10_000, 1, 100_000),
     },
     rateLimit: {
       perMinute: int("RATE_LIMIT_PER_MINUTE", 300, 1),

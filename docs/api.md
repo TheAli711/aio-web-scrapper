@@ -30,6 +30,7 @@ Authorization: Bearer wsk_XXXXXXXX_XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX
 | GET | `/projects` | List your projects (to get a `project_id`) |
 | POST | `/scrape` | Create a scrape job → `202` + Job |
 | POST | `/crawl` | Create a crawl job → `202` + Job |
+| POST | `/map` | List a site's URLs without scraping them → `200` (synchronous, no job) |
 | GET | `/jobs` | List jobs (`project_id`, `status`, `type`, `limit`, `before`) |
 | GET | `/jobs/{id}` | Job status and progress |
 | POST | `/jobs/{id}/cancel` | Cancel a queued/running job |
@@ -112,7 +113,7 @@ Everything from `/scrape` plus:
 ```json
 {
   "max_depth": 3,
-  "max_pages": 50,
+  "max_pages": 200,
   "include_patterns": ["^/blog/"],
   "exclude_patterns": ["/tag/", "\\.pdf$"],
   "allowed_domain": "example.com",
@@ -122,7 +123,49 @@ Everything from `/scrape` plus:
 
 Patterns are regular expressions matched against the URL path (≤20 each, ≤200 chars).
 `allowed_domain` defaults to the start URL's host and must be that host or a parent domain.
-Server caps: `MAX_CRAWL_PAGES`, `MAX_CRAWL_DEPTH`, `MAX_CRAWL_DURATION_MS`.
+Defaults: `max_pages` 200, `max_depth` 3. Server caps: `MAX_CRAWL_PAGES` (default 2000),
+`MAX_CRAWL_DEPTH`, `MAX_CRAWL_DURATION_MS`.
+
+**Store crawls.** A crawl that starts at the home page of a Magento, Shopify or WooCommerce store
+(and sets no `include_patterns`) reads product URLs from the store's public catalog instead of
+relying on link-following, which on large stores runs out of pages in the category menu before
+reaching any product. 25% of `max_pages` is reserved for products; the rest goes to the site's
+other pages (sitemap, then links on the home page), and slots those leave unused go to more
+products. Pages are fetched one link deep from the home page in this mode, so `max_depth` has no
+further effect. If the store's catalog is not reachable, the crawl runs normally.
+
+### POST /map
+
+Lists a site's URLs without scraping them. Synchronous (usually 2–20 s); no job is created.
+
+```json
+{
+  "url": "https://shop.example.com/",
+  "limit": 5000,
+  "include_patterns": [],
+  "exclude_patterns": ["/tag/"],
+  "allowed_domain": "example.com",
+  "allow_subdomains": false
+}
+```
+
+Only `url` is required. `limit` defaults to 5000 (server cap `MAX_MAP_URLS`, default 10000);
+the pattern and domain fields work as for `/crawl`. Response **200**:
+
+```json
+{
+  "url": "https://shop.example.com/",
+  "platform": "magento",
+  "product_urls": 3750,
+  "count": 5000,
+  "urls": ["https://shop.example.com/", "https://shop.example.com/some-product.html", "..."]
+}
+```
+
+`urls` starts with the start URL, then product pages from the store's public catalog (when
+`platform` is `magento`, `shopify` or `woocommerce`; 25% of `limit` is reserved for them),
+sitemap entries and the start page's links, deduplicated. If the start page can't be loaded
+and nothing else is found, the response is an error (`TIMEOUT`, `CONNECTION_FAILED`, ...).
 
 ### Job
 
@@ -134,7 +177,7 @@ Server caps: `MAX_CRAWL_PAGES`, `MAX_CRAWL_DEPTH`, `MAX_CRAWL_DURATION_MS`.
   "target_url": "https://example.com/",
   "status": "running",
   "source": "api",
-  "options": { "formats": ["markdown"], "max_pages": 50, "max_depth": 3, "...": "..." },
+  "options": { "formats": ["markdown"], "max_pages": 200, "max_depth": 3, "...": "..." },
   "progress": { "pages_discovered": 12, "pages_processed": 7, "pages_succeeded": 6, "pages_failed": 1 },
   "error": null,
   "created_at": "2026-09-24T12:00:00.000Z",
@@ -205,5 +248,5 @@ Codes that appear on failed **jobs** and **results**: `TIMEOUT`, `HTTP_ERROR`,
 ## Rate limits
 
 Per API key: `RATE_LIMIT_PER_MINUTE` (default 300) overall, and `RATE_LIMIT_JOB_CREATE_PER_MINUTE`
-(default 30) for `POST /scrape` and `POST /crawl`. Responses carry `x-ratelimit-limit`,
+(default 30) for `POST /scrape`, `POST /crawl` and `POST /map`. Responses carry `x-ratelimit-limit`,
 `x-ratelimit-remaining` and `x-ratelimit-reset`; a `429` carries `retry-after`.

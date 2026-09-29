@@ -86,11 +86,25 @@ curl:
 | `timeout_ms` | both | 30000 | per page; server max 90000 |
 | `wait_for_ms` | both | 0 | extra wait after load for JS-heavy pages; ≤ timeout_ms/2 |
 | `project_id` | both | your default project | uuid from `GET /api/v1/projects` |
-| `max_pages` | crawl | 50 | server max 500 |
+| `max_pages` | crawl | 200 | server max 2000; store home pages: 25% reserved for products (see below) |
 | `max_depth` | crawl | 3 | link hops from the start URL; server max 10 |
 | `include_patterns` / `exclude_patterns` | crawl | none | regexes on the URL **path**, e.g. `^/blog/` |
 | `allowed_domain` | crawl | start host | the start host or a parent domain of it |
 | `allow_subdomains` | crawl | false | follow links to subdomains of `allowed_domain` |
+
+## Recipe 3: list a site's URLs (map)
+
+    POST /api/v1/map
+    {"url": "https://shop.example.com/", "limit": 5000}
+    → {"platform": "shopify", "product_urls": 3750, "count": 5000, "urls": ["https://shop.example.com/", …]}
+
+Synchronous, nothing is scraped or stored. Accepts `include_patterns`, `exclude_patterns`,
+`allowed_domain` and `allow_subdomains` like a crawl; `limit` defaults to 5000 (server max 10000).
+For Magento, Shopify and WooCommerce stores the product URLs come from the store's catalog.
+Use it to pick pages, then scrape them one by one or crawl with `include_patterns`.
+
+Crawls that start at a store's home page use the same catalog: 25% of `max_pages` goes to
+product pages, the rest to the site's other pages (unused slots go to more products).
 
 ## Other endpoints
 

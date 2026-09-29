@@ -22,6 +22,8 @@ import {
   JobListQuery,
   JobResultsPage,
   JobResultsQuery,
+  MapBody,
+  MapRequest,
   ResultWithContent,
   ScrapeQuery,
   ScrapeRequest,
@@ -126,6 +128,29 @@ export const jobRoutes: FastifyPluginAsyncTypebox<JobRouteOptions> = async (app,
     async (req, reply) => {
       const job = await jobsSvc.create(principalOf(req), "crawl", req.body);
       return reply.code(202).header("location", `${base}/jobs/${job.id}`).send(presentJob(job, base));
+    },
+  );
+
+  app.post(
+    `${base}/map`,
+    {
+      preValidation: auth,
+      config: createLimit,
+      schema: {
+        hide,
+        tags,
+        security,
+        summary: "List a website's URLs",
+        description:
+          "Returns the site's URLs without scraping them: the start URL, product pages from the store's public catalog " +
+          "(Magento, Shopify and WooCommerce stores), sitemap entries and the start page's links. Synchronous; no job is created.",
+        body: MapRequest,
+        response: { 200: MapBody, ...errorResponses },
+      },
+    },
+    async (req) => {
+      const r = await jobsSvc.map(req.body);
+      return { url: r.url, platform: r.platform, product_urls: r.productUrls, count: r.urls.length, urls: r.urls };
     },
   );
 

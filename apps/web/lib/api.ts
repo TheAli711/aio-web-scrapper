@@ -12,6 +12,8 @@ import type {
   JobEvent,
   JobResultsPage,
   ListResponse,
+  MapRequest,
+  MapResult,
   Project,
   ResultListItem,
   ResultWithContent,
@@ -152,6 +154,7 @@ export const api = {
 
   scrape: (body: ScrapeRequest) => request<Job>("POST", "/api/scrape", body),
   crawl: (body: CrawlRequest) => request<Job>("POST", "/api/crawl", body),
+  map: (body: MapRequest) => request<MapResult>("POST", "/api/map", body),
   cancelJob: (id: string) => request<Job>("POST", `/api/jobs/${id}/cancel`),
 
   createKey: (name: string) => request<CreatedApiKey>("POST", "/api/keys", { name }),

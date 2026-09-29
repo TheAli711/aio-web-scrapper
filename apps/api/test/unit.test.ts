@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import { detectPlatform, discoverProducts, inScope, matchesPatterns, parseCatalogPage } from "../src/engine/catalog.js";
 import { FirecrawlEngine } from "../src/engine/firecrawl.js";
 import { applySizeLimit, htmlToText, sanitizeMetadata } from "../src/services/results.js";
 import { generateApiKey, hashPassword, parseApiKey, verifyPassword } from "../src/lib/crypto.js";
@@ -153,11 +154,13 @@ describe("FirecrawlEngine render-wait retry", () => {
 
   it("crawls sites that bounce the browser without JS", async () => {
     const crawlOpts = { ...opts, maxDepth: 2, maxPages: 10, includePatterns: [], excludePatterns: [], allowedDomain: "shop.dev", allowSubdomains: false };
-    await withFetch([bounced, { success: true, id: "c1" }, full, { success: true, id: "c2" }], async (bodies) => {
+    // Bounced probe, its no-JS re-probe, the crawl; then a normal site's probe and crawl.
+    await withFetch([bounced, full, { success: true, id: "c1" }, full, { success: true, id: "c2" }], async (bodies) => {
       await engine.crawl("https://shop.dev/", crawlOpts);
-      expect((bodies[1]!.scrapeOptions as Record<string, unknown>).fastMode).toBe(true);
+      expect(bodies[1]!.fastMode).toBe(true);
+      expect((bodies[2]!.scrapeOptions as Record<string, unknown>).fastMode).toBe(true);
       await engine.crawl("https://a.dev/", { ...crawlOpts, allowedDomain: "a.dev" });
-      expect((bodies[3]!.scrapeOptions as Record<string, unknown>).fastMode).toBeUndefined();
+      expect((bodies[4]!.scrapeOptions as Record<string, unknown>).fastMode).toBeUndefined();
     });
   });
 
@@ -170,6 +173,142 @@ describe("FirecrawlEngine render-wait retry", () => {
       const page = await engine.scrape("https://a.dev/", { ...opts, waitForMs: 2000 });
       expect(page.success).toBe(false);
       expect(bodies).toHaveLength(1);
+    });
+  });
+});
+
+describe("store catalog", () => {
+  it("detects the store platform from page markup", () => {
+    expect(detectPlatform('<script type="text/x-magento-init">{"*":{"Magento_Ui/js/core/app":{}}}</script>')).toBe("magento");
+    expect(detectPlatform('<link href="//cdn.shopify.com/s/files/1/theme.css">')).toBe("shopify");
+    expect(detectPlatform('<body class="home woocommerce-no-js">')).toBe("woocommerce");
+    expect(detectPlatform("<html><body>blog</body></html>")).toBeNull();
+    expect(detectPlatform(undefined)).toBeNull();
+  });
+
+  it("parses each platform's catalog into product URLs", () => {
+    const magento = { data: { storeConfig: { product_url_suffix: "/" }, products: { items: [{ url_key: "iphone-17" }, { url_key: "" }] } } };
+    expect(parseCatalogPage("magento", "https://m.dev", magento)).toEqual(["https://m.dev/iphone-17/"]);
+    const noSuffix = { data: { products: { items: [{ url_key: "tv" }] } } };
+    expect(parseCatalogPage("magento", "https://m.dev", noSuffix)).toEqual(["https://m.dev/tv.html"]);
+    expect(parseCatalogPage("shopify", "https://s.dev", { products: [{ handle: "shoe" }] })).toEqual(["https://s.dev/products/shoe"]);
+    expect(parseCatalogPage("woocommerce", "https://w.dev", [{ permalink: "https://w.dev/product/mug/" }, { permalink: "javascript:x" }])).toEqual([
+      "https://w.dev/product/mug/",
+    ]);
+    expect(parseCatalogPage("magento", "https://m.dev", { errors: [{ message: "no" }] })).toBeNull();
+    expect(parseCatalogPage("shopify", "https://s.dev", "<html>")).toBeNull();
+  });
+
+  it("pages through the catalog until it runs out or the cap is reached", async () => {
+    const requested: string[] = [];
+    const shop = (n: number, from: number) => ({ products: Array.from({ length: n }, (_, i) => ({ handle: `p${from + i}` })) });
+    const fetchJson = async (url: string) => {
+      requested.push(url);
+      const page = Number(new URL(url).searchParams.get("page"));
+      return page === 1 ? shop(250, 0) : page === 2 ? shop(10, 250) : shop(0, 0);
+    };
+    const all = await discoverProducts("shopify", "https://s.dev", 1000, fetchJson, Date.now() + 5000);
+    expect(all).toHaveLength(260);
+    const capped = await discoverProducts("shopify", "https://s.dev", 100, fetchJson, Date.now() + 5000);
+    expect(capped).toHaveLength(100);
+    expect(requested.at(-1)).toContain("page=1");
+    expect(await discoverProducts("shopify", "https://s.dev", 100, async () => null, Date.now() + 5000)).toEqual([]);
+  });
+
+  it("scopes URLs to the site and path filters", () => {
+    expect(inScope("https://www.shop.dev/a", "shop.dev", false)).toBe(true);
+    expect(inScope("https://shop.dev/a", "www.shop.dev", false)).toBe(true);
+    expect(inScope("https://blog.shop.dev/a", "shop.dev", false)).toBe(false);
+    expect(inScope("https://blog.shop.dev/a", "shop.dev", true)).toBe(true);
+    expect(inScope("https://other.dev/a", "shop.dev", true)).toBe(false);
+    expect(matchesPatterns("https://shop.dev/products/a", ["^/products"], [])).toBe(true);
+    expect(matchesPatterns("https://shop.dev/blog/a", ["^/products"], [])).toBe(false);
+    expect(matchesPatterns("https://shop.dev/products/a", [], ["/a$"])).toBe(false);
+  });
+});
+
+describe("FirecrawlEngine store crawls", () => {
+  const magentoHome = {
+    success: true,
+    data: {
+      markdown: "x".repeat(500),
+      rawHtml: '<script>{"Magento_Theme/js/x":{}}</script>',
+      links: ["https://www.shop.dev/c1", "https://www.shop.dev/checkout/cart/", "https://www.shop.dev/c2", "https://www.shop.dev/c3", "https://www.shop.dev/c4", "https://other.dev/x"],
+      // Firecrawl doesn't report the apex -> www redirect; the page's links show where the store lives.
+      metadata: { statusCode: 200, sourceURL: "https://shop.dev/" },
+    },
+  };
+  const catalog = { data: { storeConfig: { product_url_suffix: "/" }, products: { items: [{ url_key: "p1" }, { url_key: "p2" }, { url_key: "p3" }] } } };
+
+  const withStore = async (fn: (calls: Array<{ path: string; body: Record<string, any> }>) => Promise<void>) => {
+    const calls: Array<{ path: string; body: Record<string, any> }> = [];
+    const realFetch = globalThis.fetch;
+    globalThis.fetch = (async (url: string, init: RequestInit) => {
+      const path = new URL(url).pathname;
+      const body = init.body ? JSON.parse(String(init.body)) : {};
+      calls.push({ path, body });
+      const json = (x: unknown) => new Response(JSON.stringify(x), { status: 200 });
+      if (path === "/v2/scrape" && String(body.url).includes("/graphql")) {
+        return json({ success: true, data: { rawHtml: JSON.stringify(catalog), metadata: { statusCode: 200 } } });
+      }
+      if (path === "/v2/scrape") return json(magentoHome);
+      if (path === "/v2/map") return json({ success: true, links: [{ url: "https://www.shop.dev/about" }, { url: "https://www.shop.dev/p1/" }] });
+      if (path === "/v2/batch/scrape") return json({ success: true, id: "b1" });
+      if (path === "/v2/crawl") return json({ success: true, id: "c1" });
+      if (path.startsWith("/v2/batch/scrape/b1")) return json({ success: true, status: "completed", total: 1, completed: 1, data: [] });
+      return new Response("{}", { status: 404 });
+    }) as typeof fetch;
+    try {
+      await fn(calls);
+    } finally {
+      globalThis.fetch = realFetch;
+    }
+  };
+  const engine = new FirecrawlEngine({ apiUrl: "http://fc", apiKey: "k", requestTimeoutMs: 1000 });
+  const crawlOpts = {
+    formats: ["markdown" as const], onlyMainContent: true, timeoutMs: 30000, waitForMs: 0,
+    maxDepth: 3, maxPages: 5, includePatterns: [], excludePatterns: [], allowedDomain: "shop.dev", allowSubdomains: false,
+  };
+
+  it("batch-scrapes a store's products with a reserved share of the budget, then its other pages", async () => {
+    await withStore(async (calls) => {
+      const { engineJobId } = await engine.crawl("https://shop.dev/", crawlOpts);
+      expect(engineJobId).toBe("batch:b1");
+      const batch = calls.find((c) => c.path === "/v2/batch/scrape")!.body;
+      // 4 slots after the start page: 25% (1) reserved for products, the rest for other pages.
+      expect(batch.urls).toEqual(["https://shop.dev/", "https://www.shop.dev/p1/", "https://www.shop.dev/about", "https://www.shop.dev/c1", "https://www.shop.dev/c2"]);
+      expect(calls.some((c) => c.path === "/v2/crawl")).toBe(false);
+      expect(calls.find((c) => String(c.body.url).includes("/graphql"))!.body.url).toMatch(/^https:\/\/www\.shop\.dev\/graphql\?/);
+
+      await engine.crawl("https://shop.dev/", { ...crawlOpts, maxPages: 50 });
+      const big = calls.filter((c) => c.path === "/v2/batch/scrape").at(-1)!.body;
+      // Other pages don't fill the budget, so every product gets in; cart and off-site links never do.
+      expect(big.urls).toHaveLength(9);
+      expect(big.urls.filter((u: string) => /\/p\d\/$/.test(u))).toHaveLength(3);
+      expect(big.urls.some((u: string) => /checkout|other\.dev/.test(u))).toBe(false);
+
+      const snap = await engine.getJobStatus(engineJobId, 0);
+      expect(snap.status).toBe("completed");
+      expect(calls.at(-1)!.path).toBe("/v2/batch/scrape/b1");
+    });
+  });
+
+  it("uses a normal crawl below the home page or when restricted to some paths", async () => {
+    await withStore(async (calls) => {
+      await engine.crawl("https://shop.dev/c1", crawlOpts);
+      await engine.crawl("https://shop.dev/", { ...crawlOpts, includePatterns: ["^/blog"] });
+      expect(calls.filter((c) => c.path === "/v2/crawl")).toHaveLength(2);
+      expect(calls.some((c) => c.path === "/v2/batch/scrape" || String(c.body.url).includes("/graphql"))).toBe(false);
+    });
+  });
+
+  it("maps a store: start URL, products, sitemap, then start-page links", async () => {
+    await withStore(async () => {
+      const r = await engine.map("https://shop.dev/", { limit: 100, includePatterns: [], excludePatterns: [], allowedDomain: "shop.dev", allowSubdomains: false });
+      expect(r).toMatchObject({ platform: "magento", productUrls: 3 });
+      expect(r.urls.slice(0, 5)).toEqual(["https://shop.dev/", "https://www.shop.dev/p1/", "https://www.shop.dev/p2/", "https://www.shop.dev/p3/", "https://www.shop.dev/about"]);
+      expect(r.urls).toContain("https://www.shop.dev/checkout/cart/");
+      expect(r.urls).not.toContain("https://other.dev/x");
     });
   });
 });

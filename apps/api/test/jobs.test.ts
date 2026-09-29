@@ -283,6 +283,36 @@ describe("POST /api/v1/crawl", () => {
   });
 });
 
+describe("POST /api/v1/map", () => {
+  const map = (payload: Record<string, unknown>, headers = auth) => t.app.inject({ method: "POST", url: "/api/v1/map", headers, payload });
+
+  it("lists a site's URLs, capped at the server limit", async () => {
+    const res = await map({ url: "https://example.com/" });
+    expect(res.statusCode).toBe(200);
+    expect(res.json()).toEqual({
+      url: "https://example.com/",
+      platform: "shopify",
+      product_urls: 2,
+      count: 3,
+      urls: ["https://example.com/", "https://example.com/products/a", "https://example.com/products/b"],
+    });
+    expect((await map({ url: "https://example.com/", limit: 2 })).json().count).toBe(2);
+  });
+
+  it("validates like a crawl and reports page failures as errors", async () => {
+    expect((await map({ url: "https://example.com/", limit: 4 })).json().error).toMatchObject({ code: "LIMIT_EXCEEDED", details: { field: "limit", max: 3 } });
+    expect((await map({ url: "https://example.com/", exclude_patterns: ["(bad"] })).json().error.code).toBe("VALIDATION_ERROR");
+    expect((await map({ url: "http://rebind.example/" })).statusCode).toBe(400);
+    const slow = await map({ url: "https://slow.example.com/" });
+    expect(slow.statusCode).toBe(504);
+    expect(slow.json().error.code).toBe("TIMEOUT");
+  });
+
+  it("requires authentication", async () => {
+    expect((await map({ url: "https://example.com/" }, {})).statusCode).toBe(401);
+  });
+});
+
 describe("observability", () => {
   it("counts jobs, pages and API errors", async () => {
     expect(t.metrics.counter("jobs_created_total", { source: "api", type: "scrape" })).toBeGreaterThan(0);

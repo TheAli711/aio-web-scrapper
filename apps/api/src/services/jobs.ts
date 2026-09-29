@@ -23,7 +23,7 @@ import type {
 } from "../domain.js";
 import type { BrandingService } from "../engine/branding.js";
 import { EngineUnavailableError } from "../engine/firecrawl.js";
-import type { PageResult, ScrapingEngine } from "../engine/types.js";
+import type { MapResult, PageResult, ScrapingEngine } from "../engine/types.js";
 import { AppError, type ErrorCode } from "../lib/errors.js";
 import type { Metrics } from "../observability/metrics.js";
 import type { ResultService } from "./results.js";
@@ -47,7 +47,17 @@ export interface CrawlInput extends ScrapeInput {
   allow_subdomains?: boolean;
 }
 
-const DEFAULT_CRAWL_PAGES = 50;
+export interface MapInput {
+  url: string;
+  limit?: number;
+  include_patterns?: string[];
+  exclude_patterns?: string[];
+  allowed_domain?: string;
+  allow_subdomains?: boolean;
+}
+
+const DEFAULT_CRAWL_PAGES = 200;
+const DEFAULT_MAP_URLS = 5000;
 const DEFAULT_CRAWL_DEPTH = 3;
 
 export class JobService {
@@ -106,6 +116,11 @@ export class JobService {
         max: this.limits.maxCrawlDepth,
       });
     }
+    return { ...base, maxPages, maxDepth, ...this.normalizeScope(input, startHost) };
+  }
+
+  /** Which URLs of a site a crawl or map covers. */
+  private normalizeScope(input: CrawlInput | MapInput, startHost: string) {
     const includePatterns = this.checkPatterns(input.include_patterns ?? [], "include_patterns");
     const excludePatterns = this.checkPatterns(input.exclude_patterns ?? [], "exclude_patterns");
 
@@ -115,15 +130,7 @@ export class JobService {
         field: "allowed_domain",
       });
     }
-    return {
-      ...base,
-      maxPages,
-      maxDepth,
-      includePatterns,
-      excludePatterns,
-      allowedDomain,
-      allowSubdomains: input.allow_subdomains ?? false,
-    };
+    return { includePatterns, excludePatterns, allowedDomain, allowSubdomains: input.allow_subdomains ?? false };
   }
 
   private checkPatterns(patterns: string[], field: string): string[] {
@@ -197,6 +204,24 @@ export class JobService {
 
     void this.dispatch(job.id);
     return job;
+  }
+
+  // ------------------------------------------------------------------ map
+
+  /** List a site's URLs without scraping them. Synchronous; nothing is stored. */
+  async map(input: MapInput): Promise<{ url: string } & MapResult> {
+    const target = await this.checkTarget(input.url);
+    const limit = input.limit ?? Math.min(DEFAULT_MAP_URLS, this.limits.maxMapUrls);
+    if (limit > this.limits.maxMapUrls) {
+      throw new AppError("LIMIT_EXCEEDED", `limit may not exceed ${this.limits.maxMapUrls}`, { field: "limit", max: this.limits.maxMapUrls });
+    }
+    const scope = this.normalizeScope(input, normalizeHostname(target.hostname));
+    const t0 = Date.now();
+    const res = await this.engine.map(target.href, { limit, ...scope });
+    this.metrics.increment("maps_total", { outcome: res.error ? "failure" : "success" });
+    this.metrics.observe("engine_map_duration_ms", Date.now() - t0, { outcome: res.error ? "failure" : "success" });
+    if (res.error) throw new AppError(res.error.code, res.error.message);
+    return { url: target.href, ...res };
   }
 
   // ------------------------------------------------------------------ dispatch

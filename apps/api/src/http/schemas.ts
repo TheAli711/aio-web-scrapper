@@ -45,7 +45,7 @@ export const CrawlRequest = Type.Object(
   {
     ...ScrapeFields,
     max_depth: Type.Optional(Type.Integer({ minimum: 0, description: "Link depth from the start URL. Default 3." })),
-    max_pages: Type.Optional(Type.Integer({ minimum: 1, description: "Maximum pages to fetch. Default 50." })),
+    max_pages: Type.Optional(Type.Integer({ minimum: 1, description: "Maximum pages to fetch. Default 200; server max applies (2000 by default)." })),
     include_patterns: Type.Optional(
       Type.Array(Type.String({ maxLength: 200 }), { maxItems: 20, description: "Regexes matched against the URL path; only matching pages are crawled." }),
     ),
@@ -60,6 +60,34 @@ export const CrawlRequest = Type.Object(
   { additionalProperties: false, title: "CrawlRequest" },
 );
 export type CrawlRequest = Static<typeof CrawlRequest>;
+
+export const MapRequest = Type.Object(
+  {
+    url: ScrapeFields.url,
+    limit: Type.Optional(Type.Integer({ minimum: 1, description: "Maximum URLs to return. Default 5000; server max applies." })),
+    include_patterns: CrawlRequest.properties.include_patterns,
+    exclude_patterns: CrawlRequest.properties.exclude_patterns,
+    allowed_domain: CrawlRequest.properties.allowed_domain,
+    allow_subdomains: CrawlRequest.properties.allow_subdomains,
+  },
+  { additionalProperties: false, title: "MapRequest" },
+);
+export type MapRequest = Static<typeof MapRequest>;
+
+export const MapBody = Type.Object(
+  {
+    url: Type.String({ description: "The start URL, normalised" }),
+    platform: Nullable(
+      Type.String({ description: "Store platform whose public catalog supplied product URLs: magento, shopify or woocommerce" }),
+    ),
+    product_urls: Type.Integer({ description: "How many of `urls` came from the store catalog" }),
+    count: Type.Integer(),
+    urls: Type.Array(Type.String(), {
+      description: "Start URL first, then store catalog products, sitemap entries and links on the start page, deduplicated",
+    }),
+  },
+  { title: "MapResult" },
+);
 
 export const ScrapeQuery = Type.Object({
   wait: Type.Optional(

@@ -197,7 +197,7 @@ All variables are documented in [.env.example](.env.example). The important ones
 | `FIRECRAWL_API_URL` | `http://localhost:3002` | Engine URL (compose uses `http://api:3002`) |
 | `EGRESS_PROXY_USERNAME` / `EGRESS_PROXY_PASSWORD` | `firecrawl` / `change-me-egress` | Credentials between Firecrawl and the egress proxy |
 | `TRUSTED_TEST_HOSTS` | empty | Hostnames exempt from private-address blocking. **Keep empty outside tests.** |
-| `MAX_CRAWL_PAGES`, `MAX_CRAWL_DEPTH`, `MAX_SCRAPE_TIMEOUT_MS`, `MAX_RESULT_BYTES`, `MAX_ACTIVE_JOBS_PER_USER` | 500, 10, 90000, 5 MiB, 10 | Hard limits |
+| `MAX_CRAWL_PAGES`, `MAX_CRAWL_DEPTH`, `MAX_MAP_URLS`, `MAX_SCRAPE_TIMEOUT_MS`, `MAX_RESULT_BYTES`, `MAX_ACTIVE_JOBS_PER_USER` | 2000, 10, 10000, 90000, 5 MiB, 10 | Hard limits |
 | `RATE_LIMIT_PER_MINUTE`, `RATE_LIMIT_JOB_CREATE_PER_MINUTE`, `RATE_LIMIT_AUTH_PER_MINUTE` | 300, 30, 10 | Rate limits |
 | `METRICS_TOKEN` | empty | Bearer token for `/metrics` (required in production) |
 
