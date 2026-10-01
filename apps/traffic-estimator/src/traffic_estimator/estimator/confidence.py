@@ -16,8 +16,11 @@ POPULARITY_SOURCES = ("tranco", "crux_top", "cc_webgraph", "majestic", "openpage
 
 
 def coverage(cfg: dict[str, Any], fv: FeatureVector) -> tuple[float, dict[str, float]]:
-    """Weighted share of sources that produced evidence (present OR a definite absence)."""
-    weights: dict[str, float] = cfg.get("source_weights", {})
+    """Weighted share of sources that produced evidence (present OR a definite absence). Sources the
+    deployment does not collect ("disabled") are left out rather than counted as missing."""
+    weights: dict[str, float] = {
+        s: w for s, w in cfg.get("source_weights", {}).items() if fv.sources.get(s) is None or fv.sources[s].status != "disabled"
+    }
     got: dict[str, float] = {}
     total = sum(weights.values()) or 1.0
     for src in weights:

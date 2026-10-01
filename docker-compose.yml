@@ -195,9 +195,8 @@ services:
       TE_HTTP_PROXY_PASSWORD: ${EGRESS_PROXY_PASSWORD:-change-me-egress}
       TE_USER_AGENT: ${TE_USER_AGENT:-traffic-estimator/0.1 (+https://github.com/TheAli711/aio-web-scrapper; research crawler)}
       TE_LOG_LEVEL: ${TE_LOG_LEVEL:-info}
-      TE_ENABLED_COLLECTORS: ${TE_ENABLED_COLLECTORS:-["lists","commoncrawl","crawl","dns"]}
+      TE_ENABLED_COLLECTORS: ${TE_ENABLED_COLLECTORS:-["lists","crawl","dns"]}
       TE_LIST_PROVIDERS: ${TE_LIST_PROVIDERS:-["tranco","majestic","openpagerank","crux_top","cc_webgraph"]}
-      TE_CC_WEBGRAPH_TOP_N: ${TE_CC_WEBGRAPH_TOP_N:-5000000}
       TE_WORKER_CONCURRENCY: ${TE_WORKER_CONCURRENCY:-8}
       TE_CRAWL_PAGES: ${TE_CRAWL_PAGES:-15}
     command: ["python", "-m", "traffic_estimator", "api"]

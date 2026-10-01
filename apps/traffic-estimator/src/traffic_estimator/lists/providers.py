@@ -6,7 +6,7 @@ None of these is traffic. They are popularity / link-graph signals keyed by regi
   majestic      Majestic Million (CC BY 3.0)                             rank, ref_subnets, ref_ips
   openpagerank  Open PageRank top 10M (derived from Common Crawl)        rank, score 0..10, ref_domains
   crux_top      CrUX top origins (Chrome UX Report, CC BY 4.0)          rank bucket (1000 ... 1000000)
-  cc_webgraph   Common Crawl domain-level web graph ranks                harmonic rank/value, PageRank, n_hosts
+  cc_webgraph   Common Crawl domain-level web graph ranks (on-disk index)  harmonic rank, PageRank rank, n_hosts
 
 Access mechanisms were verified on 2026-10-01; see docs/traffic-estimator/data-sources.md.
 """
@@ -22,7 +22,7 @@ from datetime import UTC, date, datetime
 from email.utils import parsedate_to_datetime
 from typing import IO
 
-from ..domains import registrable_domain, unreverse_domain
+from ..domains import registrable_domain
 from ..http import fetch
 
 _DOMAIN_RE = re.compile(r"^[a-z0-9.-]{3,253}$")
@@ -51,9 +51,7 @@ class Entry:
 class ListProvider:
     name: str
     refresh_hours: int = 24 * 7
-    keep_file: bool = False  # keep the downloaded file for later full scans
-    top_n: int | None = None  # only load the first N rows (file must be sorted by rank)
-    complete: bool = True  # a missing row means "not in the list" (vs. "not loaded")
+    indexed: bool = False  # rows live in an on-disk index (webgraph_index.py) instead of Postgres
 
     async def resolve(self) -> ListVersion:
         raise NotImplementedError
@@ -219,22 +217,18 @@ class CruxTopProvider(ListProvider):
 
 # ------------------------------------------------------------------------------------ Common Crawl web graph
 class CommonCrawlWebGraphProvider(ListProvider):
-    """Domain-level ranks of the Common Crawl host/domain web graph (~133M domains, ~2.3 GB gz).
-    Only the top N rows are loaded into Postgres; other domains are found by scanning the kept file
-    (see loader.scan_file), so `complete` is False."""
+    """Domain-level ranks of the Common Crawl host/domain web graph (~133M domains, ~2.5 GB gz).
+    Too large for Postgres: the loader builds an on-disk index from the file (webgraph_index.py)."""
 
     name = "cc_webgraph"
     refresh_hours = 24 * 30
-    keep_file = True
-    complete = False
+    indexed = True
 
     def __init__(
         self,
-        top_n: int = 5_000_000,
         graphinfo_url: str = "https://index.commoncrawl.org/graphinfo.json",
         data_base_url: str = "https://data.commoncrawl.org/projects/hyperlinkgraph",
     ) -> None:
-        self.top_n = top_n
         self.graphinfo_url = graphinfo_url
         self.data_base_url = data_base_url.rstrip("/")
 
@@ -256,33 +250,6 @@ class CommonCrawlWebGraphProvider(ListProvider):
             except ValueError:
                 list_date = None
         return ListVersion(list_id=rid, list_date=list_date, url=f"{self.data_base_url}/{rid}/domain/{rid}-domain-ranks.txt.gz")
-
-    def parse(self, stream: IO[bytes]) -> Iterator[Entry]:
-        for line in _text(stream):
-            e = parse_webgraph_line(line)
-            if e:
-                yield e
-
-
-def parse_webgraph_line(line: str) -> Entry | None:
-    # #harmonicc_pos  #harmonicc_val  #pr_pos  #pr_val  #host_rev  #n_hosts
-    if not line or line[0] == "#":
-        return None
-    parts = line.rstrip("\n").split("\t")
-    if len(parts) < 5:
-        return None
-    d = _clean_domain(unreverse_domain(parts[4]))
-    rank = _int(parts[0])
-    if not d or not rank:
-        return None
-    return Entry(
-        domain=d,
-        rank=rank,
-        score=_float(parts[1]),
-        pr_rank=_int(parts[2]),
-        pr_score=_float(parts[3]),
-        n_hosts=_int(parts[5]) if len(parts) > 5 else None,
-    )
 
 
 def _date_id(last_modified: str | None) -> str:
@@ -312,5 +279,4 @@ __all__ = [
     "OpenPageRankProvider",
     "TrancoProvider",
     "entry_to_json",
-    "parse_webgraph_line",
 ]

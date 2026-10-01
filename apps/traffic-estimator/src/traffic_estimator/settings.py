@@ -43,7 +43,7 @@ class Settings(BaseSettings):
     # Global cap on tasks of one collector running at the same time across all workers
     # (enforced in the claim query). 0 = unlimited.
     source_concurrency: dict[str, int] = Field(
-        default_factory=lambda: {"commoncrawl": 1, "crawl": 16, "dns": 16, "lists": 16, "list_refresh": 1, "cc_webgraph_scan": 1}
+        default_factory=lambda: {"commoncrawl": 1, "crawl": 16, "dns": 16, "lists": 16, "list_refresh": 1}
     )
     # Per-worker-process request rate (requests/second) towards each external service.
     source_rate_per_s: dict[str, float] = Field(
@@ -51,7 +51,8 @@ class Settings(BaseSettings):
     )
 
     # ---------------------------------------------------------------- pipeline
-    enabled_collectors: list[str] = ["lists", "commoncrawl", "crawl", "dns"]
+    # "commoncrawl" (CDX index API) is opt-in: throttled, often 504, and it gates each estimate by minutes.
+    enabled_collectors: list[str] = ["lists", "crawl", "dns"]
     # Do not re-run a pipeline for a domain that completed less than this many hours ago
     # unless force=true. 0 = always re-run.
     reprocess_after_hours: int = 24 * 7
@@ -67,10 +68,6 @@ class Settings(BaseSettings):
     majestic_url: str = "https://downloads.majestic.com/majestic_million.csv"
     openpagerank_url: str = "https://openpagerank.keywordseverywhere.com/downloads/top10milliondomains.csv.zip"
     crux_top_url: str = "https://raw.githubusercontent.com/zakird/crux-top-lists/main/data/global/current.csv.gz"
-    # Rows of the Common Crawl domain ranks file loaded into Postgres (sorted by harmonic rank).
-    # Domains outside the top N are resolved by scanning the kept 2.3 GB file for pending domains.
-    cc_webgraph_top_n: int = 5_000_000
-    cc_webgraph_scan_delay_s: int = 600  # batch window before a scan for pending domains runs
 
     # ---------------------------------------------------------------- Common Crawl CDX index (per-domain API)
     # The index server is heavily rate limited and often returns 503/504: usable for small batches,
@@ -97,9 +94,8 @@ class Settings(BaseSettings):
     rdap_fallback_url: str = "https://rdap.org/domain/{domain}"
 
     # ---------------------------------------------------------------- estimation
-    feature_version: str = "v1"
-    model_version: str = "heuristic_v1"
-    heuristic_config: Path = APP_DIR / "config" / "heuristic_v1.yaml"
+    model_version: str = "heuristic_v2"  # heuristic_* reads config/<model_version>.yaml
+    heuristic_config: Path | None = None  # override the config file of the configured model_version
 
     @property
     def sync_database_url(self) -> str:

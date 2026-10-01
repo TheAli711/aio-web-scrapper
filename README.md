@@ -223,7 +223,7 @@ A Python service (FastAPI + Postgres queue workers) that estimates a domain's mo
 free public signals: Tranco, Majestic Million, Open PageRank, the CrUX top list, the Common Crawl
 web graph and index, our own polite crawl (robots, sitemaps, representative pages, technologies)
 and DNS/RDAP. No paid APIs. Outputs are **estimates with a range, bucket and confidence**, labelled
-`heuristic_v1` until a model is trained on legitimate ground truth; they are not measured traffic.
+`heuristic_v2` until a model is trained on legitimate ground truth; they are not measured traffic.
 
 ```bash
 docker compose up -d --build                      # adds traffic-db, traffic-api (:4200), traffic-worker, traffic-scheduler

@@ -149,7 +149,7 @@ async def test_failed_collector_does_not_block_estimate(clean_db):
         assert await pipeline.maybe_finalize(conn, run_id)
     out = await pipeline.finalize_run(run_id)
     est = out["estimate"]
-    assert est["model_version"] == "heuristic_v1" and est["traffic_bucket"]
+    assert est["model_version"] == "heuristic_v2" and est["traffic_bucket"]
     assert est["details"]["sources"]["dns"] == "failed"
     assert est["details"]["sources"]["tranco"] == "present"
     async with client() as c:

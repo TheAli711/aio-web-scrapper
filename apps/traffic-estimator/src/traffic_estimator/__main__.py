@@ -7,7 +7,6 @@ migrate                     apply migrations and exit
 enqueue <domain> [...]      submit domains (same as POST /domains/bulk)
 estimate <domain>           print the latest estimate as JSON
 lists refresh [provider]    download + load ranked lists now (all or one)
-lists scan                  resolve pending domains in the Common Crawl web graph file
 training export <file.jsonl>   export training examples
 training import <file.jsonl>   import ground-truth rows (see training/dataset.py)
 benchmark submit|wait|report <reference.csv> [options]
@@ -84,7 +83,7 @@ def main(argv: list[str] | None = None) -> None:
         asyncio.run(_run())
     elif cmd == "lists":
         from .db import migrate
-        from .lists.loader import build_providers, refresh_provider, scan_pending
+        from .lists.loader import build_providers, refresh_provider
 
         async def _run() -> None:
             await migrate()
@@ -97,8 +96,6 @@ def main(argv: list[str] | None = None) -> None:
                         print(f"unknown/disabled provider {name}", file=sys.stderr)
                         continue
                     print(json.dumps(await refresh_provider(providers[name], force="--force" in rest), default=str))
-            elif sub == "scan":
-                print(json.dumps(await scan_pending(), default=str))
             else:
                 print(__doc__)
 
@@ -146,7 +143,7 @@ async def _benchmark(argv: list[str]) -> None:
     p.add_argument("--force", action="store_true", help="submit: re-run domains processed recently")
     p.add_argument("--collectors", default="", help="submit: comma-separated collectors (default: all enabled)")
     p.add_argument("--timeout", type=float, default=6 * 3600, help="wait: seconds")
-    p.add_argument("--config", default="", help="report: heuristic config YAML (default: TE_HEURISTIC_CONFIG)")
+    p.add_argument("--config", default="", help="report: heuristic config YAML (default: config/<TE_MODEL_VERSION>.yaml)")
     p.add_argument("--out", default="", help="report: output directory (default: <data_dir>/benchmarks/<name>-<timestamp>)")
     a = p.parse_args(argv)
 

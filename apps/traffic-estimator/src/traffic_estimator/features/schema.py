@@ -1,4 +1,5 @@
-"""Feature model, version "v1".
+"""Feature model, version "v2" (v2: + tranco_list_size; the web graph float values are gone, the
+on-disk index keeps ranks only).
 
 `FeatureVector` is the structured, raw-scale view of everything we know about a domain, derived
 from the latest raw observation of each source. None means "not observed" (source missing or the
@@ -14,11 +15,11 @@ from datetime import datetime
 
 from pydantic import BaseModel, Field
 
-FEATURE_VERSION = "v1"
+FEATURE_VERSION = "v2"
 
 
 class SourceInfo(BaseModel):
-    status: str  # present | absent | missing | failed | blocked | unreachable
+    status: str  # present | absent | missing | failed | blocked | unreachable | disabled
     collected_at: datetime | None = None
     source_version: str | None = None
     note: str | None = None
@@ -32,6 +33,7 @@ class FeatureVector(BaseModel):
     # ---- ranked lists (popularity / link-graph signals; none of these is traffic)
     tranco_rank: int | None = None
     tranco_list_date: str | None = None
+    tranco_list_size: int | None = None  # ranks in the loaded list; absent = rank beyond this
     majestic_rank: int | None = None
     majestic_ref_subnets: int | None = None
     majestic_ref_ips: int | None = None
@@ -40,9 +42,7 @@ class FeatureVector(BaseModel):
     opr_ref_domains: int | None = None
     crux_rank_bucket: int | None = None  # 1000, 5000, ..., 1000000 (origin is within the top N)
     ccg_harmonic_rank: int | None = None  # Common Crawl domain web graph
-    ccg_harmonic_value: float | None = None
     ccg_pagerank_rank: int | None = None
-    ccg_pagerank_value: float | None = None
     ccg_n_hosts: int | None = None
 
     # ---- Common Crawl CDX index (recent crawls)

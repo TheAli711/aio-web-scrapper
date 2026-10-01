@@ -1,4 +1,4 @@
-"""heuristic_v1: baseline estimator with hand-set priors (config/heuristic_v1.yaml).
+"""heuristic_*: baseline estimator with hand-set priors (config/heuristic_v2.yaml; v1 kept for comparison).
 
 Clearly labelled and deliberately simple. It exists so the pipeline produces something coherent
 before a model can be trained on legitimate ground truth; its coefficients are not validated.
@@ -16,7 +16,7 @@ from typing import Any
 import yaml
 
 from ..features.schema import FeatureVector
-from ..settings import get_settings
+from ..settings import APP_DIR, get_settings
 from .base import Estimate, Estimator
 from .buckets import bucket_for, load_buckets
 from .confidence import compute_confidence
@@ -45,9 +45,16 @@ def load_config(path: str) -> dict[str, Any]:
         return yaml.safe_load(f)
 
 
+def config_path_for(model_version: str) -> Path:
+    s = get_settings()
+    if s.heuristic_config and model_version == s.model_version:
+        return s.heuristic_config
+    return APP_DIR / "config" / f"{model_version}.yaml"
+
+
 class HeuristicEstimator(Estimator):
     def __init__(self, config_path: Path | None = None) -> None:
-        self.config_path = str(config_path or get_settings().heuristic_config)
+        self.config_path = str(config_path or config_path_for(get_settings().model_version))
         self.cfg = load_config(self.config_path)
         self.model_version = str(self.cfg.get("model_version", "heuristic_v1"))
         self.buckets = load_buckets(self.cfg.get("buckets"))
@@ -116,6 +123,11 @@ class HeuristicEstimator(Estimator):
             est += float(mods.get("advertising_shift", 0.0))
         if fv.ecommerce_platform:
             est += float(mods.get("ecommerce_shift", 0.0))
+        # Absence from a complete list bounds the final estimate, small shifts included.
+        for name, cap in self._absence_caps(fv):
+            if est > cap:
+                notes.append(f"not in the {name} list: capped at 10^{cap}")
+                est = cap
         est = max(0.0, est)
 
         # Agreement is judged between the independent popularity signals; size signals use
@@ -158,6 +170,22 @@ class HeuristicEstimator(Estimator):
             details=details,
         )
 
+    def _absence_caps(self, fv: FeatureVector) -> list[tuple[str, float]]:
+        """A complete rank list without the domain says "rank beyond the end of the list". The cap is
+        what the list's last rank maps to on that signal's curve plus the curve's own uncertainty."""
+        out: list[tuple[str, float]] = []
+        signals = self.cfg.get("signals", {})
+        for name, spec in (self.cfg.get("absent_from_list_caps") or {}).items():
+            info = fv.sources.get(spec["source"])
+            size = getattr(fv, spec["list_size_feature"], None)
+            if info is None or info.status != "absent" or not size or spec["signal"] not in signals:
+                continue
+            if any(fv.sources.get(src) is not None and fv.sources[src].status == "present" for src in spec.get("unless_present", [])):
+                continue
+            last_rank = interpolate(signals[spec["signal"]]["points"], math.log10(size))
+            out.append((name, round(last_rank + float(spec.get("tolerance", 0.5)), 2)))
+        return out
+
 
 _estimators: dict[str, Estimator] = {}
 
@@ -166,7 +194,7 @@ def get_estimator(model_version: str | None = None) -> Estimator:
     name = model_version or get_settings().model_version
     if name not in _estimators:
         if name.startswith("heuristic"):
-            _estimators[name] = HeuristicEstimator()
+            _estimators[name] = HeuristicEstimator(config_path_for(name))
         else:
             raise ValueError(f"unknown model_version {name!r}; trained models are loaded via training/ (not yet available)")
     return _estimators[name]

@@ -1,0 +1,145 @@
+# heuristic_v2 -- the baseline estimator used until a model is trained on legitimate ground truth.
+#
+# !! Every number here is a hand-set prior, NOT a validated coefficient. The mapping from a
+# !! popularity rank to monthly visits is only a rough order-of-magnitude guess. Treat outputs as
+# !! coarse buckets with wide ranges; see docs/traffic-estimator/estimation.md.
+#
+# How it works: each available signal is mapped to an estimate of log10(monthly visits) through
+# a piecewise-linear curve over its (log10) value; the estimates are combined by weighted mean;
+# a few hard modifiers (parked, unregistered, unreachable) cap or shift the result; the range and
+# confidence come from evidence coverage and disagreement between the signals.
+#
+# Changes from heuristic_v1 (config/heuristic_v1.yaml), each argued from what the sources are,
+# not fitted to any third-party estimate (docs/traffic-estimator/estimation.md):
+#   - absence from the full Tranco list bounds the estimate (absent_from_list_caps); v1 applied the
+#     same bound only when a domain was absent from every list;
+#   - the range base is the curves' own uncertainty, 0.5 decade (v1: 0.3);
+#   - the web graph's weight is split between its two centralities (harmonic, PageRank).
+# Considered and left out: positive shifts for DNS verification records and recently modified
+# sitemap entries. 86% / 94% of the sites processed so far have them, so a positive-only shift
+# would raise the typical estimate (+0.15) instead of separating sites; they need a reference
+# point (a centred form) that a broader population or ground truth can provide.
+
+model_version: heuristic_v2
+
+# Signal curves: points are [log10(signal value), log10(monthly visits)]; linear between points,
+# clamped outside. `feature` is the normalized feature name (features/normalize.py).
+signals:
+  tranco:
+    feature: log_tranco_rank
+    weight: 3.0
+    kind: popularity
+    # rank 1 ~ 10^10.9, rank 1k ~ 10^7.6, rank 100k ~ 10^5.6, rank 1M ~ 10^4.5 (slope ~1 per decade)
+    points: [[0, 10.9], [1, 9.6], [2, 8.6], [3, 7.6], [4, 6.6], [5, 5.6], [6, 4.5], [6.66, 3.8]]
+  crux:
+    feature: log_crux_bucket          # bucket N = origin ranks within the top N in Chrome
+    weight: 4.0                       # the most visitor-like signal (Chrome page loads), hence the largest weight
+    kind: popularity
+    # each bucket is mapped at the log-midpoint of the ranks it spans (1k -> ~rank 300, 1M -> ~rank 700k)
+    points: [[3, 8.1], [3.7, 7.3], [4, 6.8], [4.7, 6.3], [5, 5.8], [5.7, 5.3], [6, 4.7]]
+  cc_webgraph:
+    feature: log_ccg_harmonic_rank
+    weight: 1.0                       # the graph's weight (2.0 in v1) is shared by its two centralities
+    kind: popularity
+    points: [[0, 10.5], [3, 7.4], [4, 6.5], [5, 5.6], [6, 4.7], [7, 3.9], [8, 3.2], [8.2, 3.0]]
+  cc_webgraph_pagerank:
+    feature: log_ccg_pagerank_rank    # PageRank over the same graph and the same 133M domains
+    weight: 1.0
+    kind: links                       # same source as cc_webgraph: not an independent popularity vote
+    points: [[0, 10.5], [3, 7.4], [4, 6.5], [5, 5.6], [6, 4.7], [7, 3.9], [8, 3.2], [8.2, 3.0]]
+  majestic:
+    feature: log_majestic_rank        # backlink-based: link popularity, not visitors (lower weight)
+    weight: 1.0
+    kind: popularity
+    points: [[0, 10.5], [3, 7.4], [4, 6.5], [5, 5.6], [6, 4.6]]
+  openpagerank:
+    feature: log_opr_rank             # link-graph based as well
+    weight: 1.0
+    kind: popularity
+    points: [[0, 10.5], [3, 7.4], [4, 6.5], [5, 5.6], [6, 4.6], [7, 3.8]]
+  referring_domains:
+    feature: log_opr_ref_domains      # log10(1 + referring domains) from the Open PageRank list
+    weight: 1.5
+    kind: links
+    points: [[0, 2.5], [1, 3.3], [2, 4.0], [3, 4.8], [4, 5.6], [5, 6.5], [6, 7.5]]
+  commoncrawl_pages:
+    feature: log_cc_url_count         # URLs captured by Common Crawl in the recent crawls
+    weight: 0.7
+    kind: size
+    points: [[0, 2.8], [1, 3.4], [2, 4.0], [3, 4.7], [4, 5.4], [5, 6.2]]
+  sitemap_pages:
+    feature: log_sitemap_pages
+    weight: 0.7
+    kind: size
+    points: [[0, 2.8], [1, 3.0], [2, 3.5], [3, 4.0], [4, 4.6], [5, 5.3], [6, 6.0]]
+
+# Applied when NO popularity-list signal is present (absent from Tranco, CrUX, Majestic, OPR, web
+# graph): size signals alone cannot justify more than this (log10 visits ~ 20K/month; absence from
+# the full Tranco list means a rank beyond ~4.6M).
+no_popularity_cap: 4.3
+
+# A complete rank list that does not contain the domain says "rank beyond the end of the list".
+# The final estimate is capped at what the list's last rank maps to on that list's curve, plus the
+# curve's own uncertainty (`tolerance`, log10). Tranco's full list (~4.6M pay-level domains: every
+# domain in any of its five source top lists over 30 days) ends at 10^3.8 on the tranco curve, so
+# the cap is 10^4.3 (~20K); with TE_TRANCO_SCOPE=1000000 it follows the shorter list (10^5.0).
+# Skipped when the domain is in the CrUX top list (direct Chrome evidence outranks the absence).
+absent_from_list_caps:
+  tranco:
+    source: tranco
+    list_size_feature: tranco_list_size
+    signal: tranco
+    tolerance: 0.5
+    unless_present: [crux_top]
+
+# Hard modifiers (log10 space).
+modifiers:
+  parked_cap: 2.3                 # parked page or parking nameservers
+  unregistered_cap: 1.5           # RDAP says not found and DNS is NXDOMAIN
+  nxdomain_cap: 2.0               # does not resolve, registered
+  unreachable_shift: -0.4         # resolves but the homepage gave no HTTP response at all
+  blocked_shift: 0.0              # bot-protected sites are often large; no change, confidence drops
+  analytics_shift: 0.05           # tag presence is a weak operational signal only
+  advertising_shift: 0.1
+  ecommerce_shift: 0.0
+
+# Range half-width in log10 (symmetric around the estimate):
+#   spread = base + missing_evidence * (1 - coverage) + disagreement * stddev(signal estimates)
+# base = the curves' own uncertainty (the same 0.5 decade as the absence-cap tolerance): even a
+# perfectly observed rank maps to visits only within about x3 either way.
+range:
+  base: 0.5
+  missing_evidence: 0.5
+  disagreement: 0.8
+  max: 1.5
+
+# Confidence = coverage_weight * coverage + agreement_weight * agreement + popularity_bonus,
+# where coverage is the weighted share of sources that produced evidence, agreement is
+# 1 - min(1, stddev / disagreement_scale) over the signal estimates, and the bonus rewards having
+# at least two independent popularity signals.
+confidence:
+  coverage_weight: 0.55
+  agreement_weight: 0.35
+  popularity_bonus: 0.10          # >= 2 popularity signals present
+  disagreement_scale: 1.0         # stddev (log10) at which agreement reaches 0
+  source_weights:                 # how much each source counts towards coverage
+    tranco: 2.0
+    crux_top: 2.0
+    cc_webgraph: 1.5
+    majestic: 1.0
+    openpagerank: 1.0
+    commoncrawl: 1.0
+    crawl: 1.5
+    dns: 0.5
+  labels:
+    high: 0.70
+    medium: 0.40
+
+# Bucket edges in monthly visits.
+buckets:
+  - {label: "<1K", min: 0, max: 1000}
+  - {label: "1K-10K", min: 1000, max: 10000}
+  - {label: "10K-100K", min: 10000, max: 100000}
+  - {label: "100K-1M", min: 100000, max: 1000000}
+  - {label: "1M-10M", min: 1000000, max: 10000000}
+  - {label: "10M+", min: 10000000, max: null}

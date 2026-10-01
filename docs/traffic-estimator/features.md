@@ -1,10 +1,13 @@
-# Feature definitions (feature_version `v1`)
+# Feature definitions (feature_version `v2`)
 
 `FeatureVector` (`features/schema.py`) is the raw-scale view derived from the latest raw observation
 per source. `None` means *not observed* (the source is missing/failed or had nothing), which is
 different from `0`. `fv.sources[<source>].status` records why: `present`, `absent` (a definite
-negative, e.g. not in the Tranco list), `missing` (collector not run / no data), `failed`,
-`unreachable`, `blocked`.
+negative, e.g. not in the Tranco list), `missing` (no data yet), `disabled` (the deployment does not
+run that collector or list; left out of coverage), `failed`, `unreachable`, `blocked`.
+
+v2 (from v1): added `tranco_list_size` and the `disabled` status; dropped the web graph's float
+centrality values, which the on-disk index does not keep.
 
 Normalised inputs (`features/normalize.py`, `NORMALIZED_VERSION = v1`) are what models and the
 heuristic consume: ranks → `log10(rank)`, counts → `log10(1 + n)`, flags → 0/1, shares → 0..1,
@@ -14,11 +17,11 @@ missing → `None`. Transformations are deterministic and versioned.
 
 | Feature | Source | Meaning | Normalised |
 |---|---|---|---|
-| `tranco_rank`, `tranco_list_date` | tranco | rank in the Tranco daily list (pay-level domains); absent = not in the loaded list (top 1M or full ~4.6M) | `log_tranco_rank`, `tranco_present` |
+| `tranco_rank`, `tranco_list_date`, `tranco_list_size` | tranco | rank in the Tranco daily list (pay-level domains); absent = not in the loaded list, i.e. a rank beyond `tranco_list_size` (1M or ~4.6M for the full list) | `log_tranco_rank`, `tranco_present` |
 | `majestic_rank`, `majestic_ref_subnets`, `majestic_ref_ips` | majestic | Majestic Million rank; referring class-C subnets / IPs (backlink breadth) | `log_majestic_rank`, `log_majestic_ref_subnets`, `log_majestic_ref_ips`, `majestic_present` |
 | `opr_rank`, `opr_score`, `opr_ref_domains` | openpagerank | Open PageRank top-10M rank, score 0–10, referring domains (Common Crawl derived) | `log_opr_rank`, `opr_score`, `log_opr_ref_domains`, `opr_present` |
 | `crux_rank_bucket` | crux_top | smallest CrUX popularity bucket (1000 … 1000000) among the domain's origins | `log_crux_bucket`, `crux_present` |
-| `ccg_harmonic_rank`, `ccg_harmonic_value`, `ccg_pagerank_rank`, `ccg_pagerank_value`, `ccg_n_hosts` | cc_webgraph | Common Crawl domain web graph: harmonic-centrality rank/value, PageRank rank/value, hosts under the domain | `log_ccg_harmonic_rank`, `log_ccg_pagerank_rank`, `log_ccg_n_hosts`, `ccg_present` |
+| `ccg_harmonic_rank`, `ccg_pagerank_rank`, `ccg_n_hosts` | cc_webgraph | Common Crawl domain web graph (133M domains): harmonic-centrality rank, PageRank rank, hosts under the domain | `log_ccg_harmonic_rank`, `log_ccg_pagerank_rank`, `log_ccg_n_hosts`, `ccg_present` |
 
 ## Common Crawl CDX index — collector `commoncrawl`
 

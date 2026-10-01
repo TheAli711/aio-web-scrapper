@@ -18,7 +18,7 @@ from . import pipeline, queue
 from .collectors import enabled_collectors
 from .db import connection, dispose_engine, migrate
 from .http import close_client
-from .lists.loader import build_providers, refresh_provider, scan_pending
+from .lists.loader import build_providers, refresh_provider
 from .settings import get_settings
 
 log = logging.getLogger(__name__)
@@ -76,7 +76,7 @@ class Worker:
             await asyncio.wait(self.inflight, return_when=asyncio.FIRST_COMPLETED, timeout=self.s.worker_poll_interval_s)
 
     async def _claim(self) -> queue.Task | None:
-        kinds = list(self.collectors) + [pipeline.FINALIZE_KIND, "list_refresh", "cc_webgraph_scan"]
+        kinds = list(self.collectors) + [pipeline.FINALIZE_KIND, "list_refresh"]
         async with connection() as conn:
             return await queue.claim(
                 conn, worker_id=self.worker_id, lease_s=self.s.task_lease_s, kind_caps=self.s.source_concurrency, kinds=kinds
@@ -96,8 +96,6 @@ class Worker:
                     await self._finish(task, "skipped", f"provider {task.payload.get('provider')!r} not enabled")
                 else:
                     await self._run_simple(task, refresh_provider(provider, force=bool(task.payload.get("force"))))
-            elif task.kind == "cc_webgraph_scan":
-                await self._run_simple(task, scan_pending(task.payload.get("provider", "cc_webgraph")))
             else:
                 await self._finish(task, "failed", f"unknown task kind {task.kind}")
         except Exception as e:  # noqa: BLE001

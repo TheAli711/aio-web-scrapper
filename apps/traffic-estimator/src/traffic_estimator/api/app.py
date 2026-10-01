@@ -41,7 +41,7 @@ Website traffic **estimates** inferred from free public signals (Tranco, Majesti
 Open PageRank, CrUX top list, Common Crawl web graph & index, our own crawl, DNS/RDAP).
 
 Numbers are not measured traffic. Every estimate carries a range, a traffic bucket, a confidence
-score and the model version (`heuristic_v1` until a model is trained on legitimate ground truth).
+score and the model version (`heuristic_v2` until a model is trained on legitimate ground truth).
 """
 
 

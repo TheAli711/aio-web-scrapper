@@ -1,8 +1,9 @@
-"""Raw observations -> FeatureVector (feature_version v1). Pure function of the latest observation
+"""Raw observations -> FeatureVector (feature_version v2). Pure function of the latest observation
 per source; deterministic so features can be recomputed at any time."""
 
 from __future__ import annotations
 
+from collections.abc import Iterable
 from datetime import UTC, datetime
 from typing import Any
 
@@ -32,9 +33,15 @@ def _mark(fv: FeatureVector, source: str, status: str, obs: RawObs | None = None
     )
 
 
-def extract_features(domain: str, observations: dict[str, RawObs], failed_sources: dict[str, str] | None = None) -> FeatureVector:
+def extract_features(
+    domain: str,
+    observations: dict[str, RawObs],
+    failed_sources: dict[str, str] | None = None,
+    disabled: Iterable[str] = (),
+) -> FeatureVector:
     """observations: latest observation per source. failed_sources: source -> error for collectors that
-    failed in this run (so the confidence layer knows they were attempted)."""
+    failed in this run (so the confidence layer knows they were attempted). disabled: sources this
+    deployment does not collect; without an observation they are "disabled", not missing evidence."""
     fv = FeatureVector(domain=domain, feature_version=FEATURE_VERSION, computed_at=datetime.now(UTC))
 
     # ------------------------------------------------------------------ ranked lists
@@ -48,6 +55,7 @@ def extract_features(domain: str, observations: dict[str, RawObs], failed_source
         _mark(fv, src, "present" if present else "absent", obs)
         if src == "tranco":
             fv.tranco_list_date = p.get("list_date")
+            fv.tranco_list_size = _int(p.get("list_size"))
             if present:
                 fv.tranco_rank = int(p["rank"])
         elif src == "majestic" and present:
@@ -62,9 +70,7 @@ def extract_features(domain: str, observations: dict[str, RawObs], failed_source
             fv.crux_rank_bucket = int(p["rank"])
         elif src == "cc_webgraph" and present:
             fv.ccg_harmonic_rank = int(p["rank"])
-            fv.ccg_harmonic_value = _float(p.get("score"))
             fv.ccg_pagerank_rank = _int(p.get("pr_rank"))
-            fv.ccg_pagerank_value = _float(p.get("pr_score"))
             fv.ccg_n_hosts = _int(p.get("n_hosts"))
 
     # ------------------------------------------------------------------ Common Crawl CDX
@@ -192,6 +198,9 @@ def extract_features(domain: str, observations: dict[str, RawObs], failed_source
     for src, err in (failed_sources or {}).items():
         if src in fv.sources and fv.sources[src].status == "missing":
             fv.sources[src] = SourceInfo(status="failed", note=err[:200])
+    for src in disabled:
+        if src in fv.sources and fv.sources[src].status == "missing":
+            fv.sources[src] = SourceInfo(status="disabled", note="not collected by this deployment")
     return fv
 
 

@@ -2,10 +2,13 @@ from datetime import UTC, datetime
 
 from traffic_estimator.estimator.buckets import bucket_for, load_buckets
 from traffic_estimator.estimator.confidence import compute_confidence
-from traffic_estimator.estimator.heuristic import HeuristicEstimator, interpolate
+from traffic_estimator.estimator.heuristic import HeuristicEstimator, get_estimator, interpolate
 from traffic_estimator.features.extract import RawObs, extract_features
 from traffic_estimator.features.normalize import NORMALIZED_KEYS, normalize
 from traffic_estimator.features.schema import FeatureVector, SourceInfo
+from traffic_estimator.settings import APP_DIR
+
+V1_CONFIG = APP_DIR / "config" / "heuristic_v1.yaml"
 
 NOW = datetime(2026, 10, 1, tzinfo=UTC)
 
@@ -156,6 +159,20 @@ def test_extract_missing_everything():
     assert norm["log_tranco_rank"] is None and norm["crawl_reachable"] is None
 
 
+def test_disabled_sources_do_not_count_as_missing_evidence():
+    observations = big_site_observations()
+    del observations["commoncrawl"]
+    cfg = HeuristicEstimator().cfg["confidence"]
+    missing = extract_features("big.example", observations)
+    disabled = extract_features("big.example", observations, disabled={"commoncrawl", "not_a_source"})
+    assert missing.sources["commoncrawl"].status == "missing" and disabled.sources["commoncrawl"].status == "disabled"
+    _, _, det_missing = compute_confidence(cfg, missing, {})
+    _, _, det_disabled = compute_confidence(cfg, disabled, {})
+    assert det_disabled["coverage"] == 1.0 > det_missing["coverage"]
+    # An observation wins over "disabled" (collected before the collector was switched off).
+    assert extract_features("big.example", big_site_observations(), disabled={"commoncrawl"}).sources["commoncrawl"].status == "present"
+
+
 def test_extract_absent_list_and_unreachable_crawl():
     observations = {
         "tranco": obs("tranco", {"status": "absent", "list_id": "Q2K34"}),
@@ -193,7 +210,7 @@ def test_interpolate():
 def test_heuristic_big_site():
     fv = extract_features("big.example", big_site_observations())
     est = HeuristicEstimator().estimate(fv, normalize(fv))
-    assert est.model_version == "heuristic_v1"
+    assert est.model_version == "heuristic_v2" and est.feature_version == "v2"
     assert est.traffic_bucket in ("1M-10M", "10M+")
     assert est.lower_bound < est.estimated_monthly_visits < est.upper_bound
     assert est.confidence == "high" and est.confidence_score >= 0.7
@@ -281,6 +298,49 @@ def test_heuristic_live_site_on_parking_nameservers_is_not_parked():
     fv = extract_features("live.example", observations)
     est = HeuristicEstimator().estimate(fv, normalize(fv))
     assert "parked domain" in est.details["notes"]
+
+
+def _log10_estimate(fv: FeatureVector, estimator: HeuristicEstimator | None = None) -> float:
+    return (estimator or HeuristicEstimator()).estimate(fv, normalize(fv)).details["log10_estimate"]
+
+
+def test_heuristic_v2_absence_from_tranco_caps_the_estimate():
+    observations = big_site_observations()  # link lists say "big"
+    observations["tranco"] = obs("tranco", {"status": "absent", "list_size": 4_566_855})
+    observations["crux_top"] = obs("crux_top", {"status": "absent"})
+    fv = extract_features("linked.example", observations)
+    assert fv.tranco_list_size == 4_566_855
+    est = HeuristicEstimator().estimate(fv, normalize(fv))
+    # Beyond rank 4.57M the tranco curve reads 10^3.8; + 0.5 curve uncertainty.
+    assert est.details["log10_estimate"] == 4.3 and "not in the tranco list: capped at 10^4.3" in est.details["notes"]
+    # A shorter list bounds less: rank > 1M reads 10^4.5 -> cap 10^5.0.
+    observations["tranco"] = obs("tranco", {"status": "absent", "list_size": 1_000_000})
+    assert _log10_estimate(extract_features("linked.example", observations)) == 5.0
+    # No cap without the list size (observations from before feature v2) ...
+    observations["tranco"] = obs("tranco", {"status": "absent"})
+    assert _log10_estimate(extract_features("linked.example", observations)) > 5.0
+    # ... when CrUX has the domain ...
+    observations["tranco"] = obs("tranco", {"status": "absent", "list_size": 4_566_855})
+    observations["crux_top"] = obs("crux_top", {"status": "present", "rank": 5000})
+    assert _log10_estimate(extract_features("linked.example", observations)) > 5.0
+    # ... or under heuristic_v1, which bounded only domains absent from every list.
+    observations["crux_top"] = obs("crux_top", {"status": "absent"})
+    assert _log10_estimate(extract_features("linked.example", observations), HeuristicEstimator(V1_CONFIG)) > 5.0
+
+
+def test_heuristic_v2_web_graph_centralities_and_range():
+    fv = extract_features("big.example", big_site_observations())
+    v2 = HeuristicEstimator().estimate(fv, normalize(fv))
+    v1 = HeuristicEstimator(V1_CONFIG).estimate(fv, normalize(fv))
+    assert v2.details["signal_weights"]["cc_webgraph"] == v2.details["signal_weights"]["cc_webgraph_pagerank"] == 1.0
+    assert "cc_webgraph_pagerank" not in v1.details["signal_estimates_log10"]
+    # Same evidence and agreement; the base half-width is 0.5 instead of 0.3.
+    assert abs(v2.details["range_spread_log10"] - v1.details["range_spread_log10"] - 0.2) < 1e-9
+
+
+def test_get_estimator_reads_the_config_of_each_model_version():
+    assert get_estimator().model_version == "heuristic_v2"
+    assert get_estimator("heuristic_v1").model_version == "heuristic_v1"
 
 
 # ------------------------------------------------------------------ confidence

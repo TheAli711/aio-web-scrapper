@@ -11,8 +11,8 @@ disabled, replaced or added without touching the rest of the pipeline.
 | Majestic Million | bulk ranked list | free download (CC BY 3.0) | 0 | fine | on |
 | Open PageRank top 10M | bulk ranked list | free download | 0 | fine | on |
 | CrUX top list (crux-top-lists) | bulk ranked list | free download (CC BY 4.0 data) | 0 | fine | on |
-| Common Crawl web graph (domain ranks) | bulk file + scan | free download (2.3 GB/month) | 0 | fine (one file scan per batch) | on |
-| Common Crawl CDX index | per-domain API | free, heavily throttled | 1 request per crawl queried | **not viable** | on (small batches) |
+| Common Crawl web graph (domain ranks) | bulk file → on-disk index | free download (2.5 GB per quarterly release) | 0 (index lookup) | fine | on |
+| Common Crawl CDX index | per-domain API | free, heavily throttled | 1 request per crawl queried | **not viable** | off (opt-in, small batches) |
 | Own crawl | per-domain HTTP | our crawler via egress-proxy | ~20–40 requests | days–weeks, horizontally scalable | on |
 | DNS (DoH JSON) | per-domain API | free (Google/Cloudflare DoH) | ~8 requests | fine (rate: 1500 QPS/IP at Google) | on |
 | RDAP | per-domain API | free, per-registry limits | 1 request | slow (≈1–2 rps/registry) | on |
@@ -24,7 +24,8 @@ disabled, replaced or added without touching the rest of the pipeline.
 
 Lists are downloaded by the scheduler on each provider's cadence (`list_refresh` tasks), streamed
 into Postgres with `COPY` (`ranked_lists` + `ranked_list_entries`), and looked up locally by the
-`lists` collector. First load downloads ~2.7 GB in total.
+`lists` collector. The Common Crawl web graph is the exception (133M rows): it becomes an on-disk
+index instead. First load downloads ~2.8 GB in total.
 
 ### Tranco
 - Latest list id: `GET https://tranco-list.eu/top-1m-id` (plain text, e.g. `Q2K34`). Metadata:
@@ -62,12 +63,20 @@ into Postgres with `COPY` (`ranked_lists` + `ranked_list_entries`), and looked u
 - Catalog: `GET https://index.commoncrawl.org/graphinfo.json` (newest release first, e.g.
   `cc-main-2026-jul-aug-sep`: 133M domains, 2.15B arcs).
 - File: `https://data.commoncrawl.org/projects/hyperlinkgraph/{id}/domain/{id}-domain-ranks.txt.gz`
-  (2.3 GB, tab-separated: `harmonicc_pos harmonicc_val pr_pos pr_val host_rev n_hosts`, sorted by
-  harmonic centrality; domains in reversed notation `com.example`). Anonymous HTTPS, verified.
-- Only the top `TE_CC_WEBGRAPH_TOP_N` rows (default 5M) are loaded into Postgres. The file is kept
-  on disk; domains outside the top N are resolved by a `cc_webgraph_scan` task that streams the file
-  once for every pending domain (one scan per batch window, `TE_CC_WEBGRAPH_SCAN_DELAY_S`).
-  Domains absent from the file get a NULL-rank row (negative cache).
+  (2.5 GB gzip, 9.2 GB text, 133.2M rows, tab-separated: `harmonicc_pos harmonicc_val pr_pos pr_val
+  host_rev n_hosts`, sorted by harmonic centrality; domains in reversed notation `com.example`).
+  Anonymous HTTPS, verified.
+- A file sorted by rank cannot be searched by domain, and 133M rows are too many for Postgres, so
+  the loader builds an on-disk index (`lists/webgraph_index.py`): records sorted by a 64-bit hash
+  of the domain, plus a 2^20-slot table pointing into them, read through `mmap`. A lookup is a
+  few page reads (~0.3 ms in Docker), so every domain, long tail included, resolves at once.
+  The index keeps harmonic rank, PageRank rank and host count (not the float centrality values)
+  in 20 bytes per domain: 2.67 GB. Building it takes ~3 minutes in a child process (one pass over
+  the gzip into 256 hash partitions, then each partition sorted, peak ~8 GB disk and ~100 MB RAM);
+  the gzip is deleted afterwards. `ranked_lists.file_path` points at the index; a missing or
+  invalid index reads as "list not loaded", which makes the next lookup request a rebuild.
+  Verified on the 2026 Jul–Sep release against the earlier Postgres load: 20,793 domains, no
+  mismatch.
 - Referring-domain counts are not in the ranks file; they can be derived offline from
   `-domain-edges.txt.gz` (8 GB) — documented follow-up. We use Open PageRank's referring domains instead.
 

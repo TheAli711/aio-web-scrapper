@@ -18,7 +18,7 @@ from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncConnection
 
 from . import queue
-from .collectors import Collector, CollectorContext, CollectorResult, enabled_collectors
+from .collectors import Collector, CollectorContext, CollectorResult, disabled_sources, enabled_collectors
 from .db import connection
 from .domains import InvalidDomain, normalize_domain
 from .estimator.heuristic import get_estimator
@@ -276,7 +276,7 @@ async def build_features(conn: AsyncConnection, domain_id: int, domain: str, run
             {"r": run_id, "f": FINALIZE_KIND},
         )
         failed_sources = {r[0]: (r[1] or "failed") for r in failed}
-    return extract_features(domain, observations, failed_sources)
+    return extract_features(domain, observations, failed_sources, disabled_sources())
 
 
 async def finalize_run(run_id: int) -> dict[str, Any]:
