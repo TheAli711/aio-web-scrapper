@@ -1,0 +1,151 @@
+from traffic_estimator.collectors.crawler.html import parse_html
+from traffic_estimator.collectors.crawler.robots import parse_robots
+from traffic_estimator.collectors.crawler.sitemap import parse_sitemap
+from traffic_estimator.collectors.crawler.tech import detect
+from traffic_estimator.collectors.crawler.urls import classify_path, language_prefix
+
+UA = "traffic-estimator/0.1"
+
+
+# ------------------------------------------------------------------ robots
+def test_robots_parse_sitemaps_delay_and_disallow():
+    content = """
+User-agent: *
+Disallow: /private/
+Crawl-delay: 2
+Sitemap: https://example.com/sitemap.xml
+Sitemap: https://example.com/sitemap-products.xml
+
+User-agent: traffic-estimator
+Disallow: /
+"""
+    r = parse_robots(content, "other-bot", url="https://example.com/robots.txt")
+    assert r.found and not r.disallow_all
+    assert r.crawl_delay == 2.0
+    assert r.sitemaps == ["https://example.com/sitemap.xml", "https://example.com/sitemap-products.xml"]
+    assert r.allowed("https://example.com/page", "other-bot")
+    assert not r.allowed("https://example.com/private/x", "other-bot")
+    ours = parse_robots(content, UA)
+    assert ours.disallow_all
+    assert not ours.allowed("https://example.com/", UA)
+
+
+def test_robots_crawl_delay_capped():
+    r = parse_robots("User-agent: *\nCrawl-delay: 120\n", UA)
+    assert r.crawl_delay == 10.0
+
+
+# ------------------------------------------------------------------ sitemap
+def test_sitemap_index_and_urlset():
+    index = b"""<?xml version="1.0"?><sitemapindex xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">
+      <sitemap><loc>https://example.com/sitemap-1.xml</loc><lastmod>2026-09-01</lastmod></sitemap>
+      <sitemap><loc>https://example.com/sitemap-2.xml.gz</loc></sitemap></sitemapindex>"""
+    kind, items = parse_sitemap(index, "https://example.com/sitemap.xml")
+    assert kind == "index" and [i["loc"] for i in items] == ["https://example.com/sitemap-1.xml", "https://example.com/sitemap-2.xml.gz"]
+    urlset = b"""<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9" xmlns:xhtml="http://www.w3.org/1999/xhtml">
+      <url><loc>https://example.com/products/red-shoe</loc><lastmod>2026-09-20T10:00:00Z</lastmod>
+        <xhtml:link rel="alternate" hreflang="de" href="https://example.com/de/products/red-shoe"/></url>
+      <url><loc>https://example.com/blog/hello-world</loc></url>
+      <url><loc>https://example.com/</loc></url></urlset>"""
+    kind, items = parse_sitemap(urlset, "https://example.com/sitemap-1.xml")
+    assert kind == "urlset" and len(items) == 3
+    assert items[0]["lastmod"].startswith("2026-09-20") and items[0]["langs"] == ["de"]
+
+
+def test_sitemap_plain_text_and_garbage():
+    kind, items = parse_sitemap(b"https://example.com/a\nhttps://example.com/b\nnot a url\n", "https://example.com/sitemap.txt")
+    assert kind == "urlset" and len(items) == 2
+    kind, items = parse_sitemap(b"<html><body>404</body></html>", "https://example.com/sitemap.xml")
+    assert items == []
+
+
+# ------------------------------------------------------------------ url classification
+def test_classify_path():
+    assert classify_path("/") == "home"
+    assert classify_path("/products/red-shoe") == "product"
+    assert classify_path("/dp/B0ABC123") == "product"
+    assert classify_path("/blog/2026/09/hello") == "article"
+    assert classify_path("/2026/09/12/some-news") == "article"
+    assert classify_path("/collections/shoes") == "category"
+    assert classify_path("/images/logo.png") == "media"
+    assert classify_path("/about-us") == "page"
+    assert language_prefix("/de/products/x") == "de"
+    assert language_prefix("/en-us/x") == "en-us"
+    assert language_prefix("/js/app.js") is None
+
+
+# ------------------------------------------------------------------ html
+HTML = b"""<!doctype html><html lang="en"><head><title> Acme  Shoes </title>
+<meta name="description" content="Buy shoes">
+<meta name="generator" content="WordPress 6.5">
+<meta property="og:title" content="Acme"><link rel="canonical" href="/">
+<link rel="alternate" hreflang="de" href="https://acme.example/de/">
+<link rel="alternate" type="application/rss+xml" href="/feed">
+<script type="application/ld+json">{"@context":"https://schema.org","@type":"Organization","name":"Acme",
+ "subOrganization":[{"@type":"Store"}]}</script>
+<script src="https://www.googletagmanager.com/gtag/js?id=G-ABC12345"></script>
+<script>window.dataLayer=[];function gtag(){dataLayer.push(arguments)};gtag('config','G-ABC12345');</script>
+<script src="/wp-content/themes/x/app.js"></script>
+</head><body><h1>Acme</h1><h2>New</h2><h2>Sale</h2>
+<form role="search" action="/search"><input type="search" name="q"></form>
+<a href="/products/red-shoe">Red</a><a href="https://acme.example/blog/hi">Blog</a>
+<a href="https://shop.acme.example/x">Shop</a><a href="https://twitter.com/acme">tw</a>
+<a href="#top">top</a><img src="a.png"><img src="b.png"><p>Lorem ipsum dolor sit amet consectetur.</p>
+<!-- generated by WP Rocket --></body></html>"""
+
+
+def test_parse_html_signals():
+    p = parse_html(HTML, "https://acme.example/", "acme.example")
+    assert p.title == "Acme Shoes"
+    assert p.meta_description == "Buy shoes"
+    assert p.generator == "WordPress 6.5"
+    assert p.lang == "en"
+    assert p.canonical == "https://acme.example/"
+    assert p.og == {"title": "Acme"}
+    assert p.hreflang == ["de"]
+    assert p.rss_feeds == 1
+    assert "Organization" in p.jsonld_types and "Store" in p.jsonld_types
+    assert p.headings == {"h1": 1, "h2": 2, "h3": 0}
+    assert p.internal_links == 3 and p.external_links == 1
+    assert p.internal_hosts == {"acme.example", "shop.acme.example"}
+    assert p.has_search_form and p.forms == 1
+    assert p.images == 2 and p.word_count > 5
+    assert len(p.scripts) == 2
+
+
+# ------------------------------------------------------------------ tech
+def test_tech_detection():
+    html = HTML.decode()
+    res = detect(
+        html_samples=[html],
+        script_urls=["https://www.googletagmanager.com/gtag/js?id=G-ABC12345", "https://acme.example/wp-content/themes/x/app.js"],
+        headers={"server": "cloudflare", "cf-ray": "abc", "x-powered-by": "PHP/8.2"},
+        set_cookies=["PHPSESSID=abc; path=/"],
+        generator="WordPress 6.5",
+        dns_names=["ns1.ns.cloudflare.com"],
+    )
+    names = set(res.names)
+    assert {"WordPress", "Google Analytics", "Google Analytics 4", "Cloudflare", "PHP", "WP Rocket"} <= names
+    d = res.to_dict()
+    assert d["cms"] == "WordPress"
+    assert d["ecommerce_platform"] is None
+    assert "Google Analytics" in d["analytics"]
+    assert d["ids"]["ga"] == ["G-ABC12345"]
+
+
+def test_tech_shopify_and_pixels():
+    html = """<html><head><script src="https://cdn.shopify.com/s/files/1/x.js"></script>
+    <script>!function(f){}(window);fbq('init','123456789012345');</script>
+    <script src="https://analytics.tiktok.com/i18n/pixel/events.js"></script></head><body>Shopify.theme</body></html>"""
+    res = detect(
+        html_samples=[html],
+        script_urls=["https://cdn.shopify.com/s/files/1/x.js"],
+        headers={"x-shopid": "1"},
+        set_cookies=[],
+        generator=None,
+        dns_names=[],
+    )
+    d = res.to_dict()
+    assert d["ecommerce_platform"] == "Shopify"
+    assert "Meta Pixel" in d["advertising"] and "TikTok Pixel" in d["advertising"]
+    assert d["ids"]["meta_pixel"] == ["123456789012345"]

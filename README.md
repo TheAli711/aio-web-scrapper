@@ -217,9 +217,31 @@ npm run test:e2e
 docker compose up -d --wait egress-proxy app-api && docker compose --profile e2e stop testsite   # back to normal
 ```
 
+## Traffic estimator (apps/traffic-estimator)
+
+A Python service (FastAPI + Postgres queue workers) that estimates a domain's monthly traffic from
+free public signals: Tranco, Majestic Million, Open PageRank, the CrUX top list, the Common Crawl
+web graph and index, our own polite crawl (robots, sitemaps, representative pages, technologies)
+and DNS/RDAP. No paid APIs. Outputs are **estimates with a range, bucket and confidence**, labelled
+`heuristic_v1` until a model is trained on legitimate ground truth; they are not measured traffic.
+
+```bash
+docker compose up -d --build                      # adds traffic-db, traffic-api (:4200), traffic-worker, traffic-scheduler
+curl -s -X POST localhost:4200/domains -H 'content-type: application/json' -d '{"domain":"example.com"}'
+curl -s localhost:4200/domains/example.com/estimate?details=true
+docker compose up -d --scale traffic-worker=4     # more workers
+```
+
+Internal service (no auth, loopback only); the Swagger UI is at `http://localhost:4200/docs`.
+Docs: [docs/traffic-estimator/README.md](docs/traffic-estimator/README.md) (architecture, schema,
+API, adding a collector, training, scaling), [data-sources.md](docs/traffic-estimator/data-sources.md)
+(every source, verified access mechanisms and limits), [features.md](docs/traffic-estimator/features.md),
+[estimation.md](docs/traffic-estimator/estimation.md) (heuristic, confidence, accuracy limitations).
+
 ## Documentation
 
 - [docs/architecture.md](docs/architecture.md): components, request flow, SSRF design, Firecrawl overrides
+- [docs/traffic-estimator/](docs/traffic-estimator/README.md): the traffic estimator service
 - [docs/development.md](docs/development.md): host-side development, tests, fixture site, troubleshooting
 - [docs/api.md](docs/api.md): public API guide, schemas, error codes; machine-readable spec in [docs/openapi.json](docs/openapi.json)
 - [docs/agent-guide.md](docs/agent-guide.md): compact guide for LLM agents (served live at `/api/v1/llms.txt`)

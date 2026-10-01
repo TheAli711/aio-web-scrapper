@@ -161,6 +161,96 @@ services:
         condition: service_healthy
     restart: unless-stopped
 
+  # ---------------------------------------------------------------- traffic estimator (Python)
+  # Own Postgres; API on loopback :4200 (internal service, no auth of its own); workers and the
+  # scheduler reach the internet only through egress-proxy, like the scraping engine.
+  traffic-db:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: ${TRAFFIC_DB_USER:-traffic}
+      POSTGRES_PASSWORD: ${TRAFFIC_DB_PASSWORD:-traffic}
+      POSTGRES_DB: ${TRAFFIC_DB_NAME:-traffic}
+    command: ["postgres", "-c", "shared_buffers=256MB", "-c", "max_connections=200"]
+    volumes:
+      - traffic-db-data:/var/lib/postgresql/data
+    ports:
+      - "127.0.0.1:${TRAFFIC_DB_HOST_PORT:-5434}:5432"
+    networks:
+      - app
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${TRAFFIC_DB_USER:-traffic}"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+    restart: unless-stopped
+
+  traffic-api:
+    build:
+      context: apps/traffic-estimator
+    environment: &traffic-env
+      TE_DATABASE_URL: postgresql+psycopg://${TRAFFIC_DB_USER:-traffic}:${TRAFFIC_DB_PASSWORD:-traffic}@traffic-db:5432/${TRAFFIC_DB_NAME:-traffic}
+      TE_DATA_DIR: /data/traffic
+      TE_HTTP_PROXY: http://egress-proxy:3128
+      TE_HTTP_PROXY_USERNAME: ${EGRESS_PROXY_USERNAME:-firecrawl}
+      TE_HTTP_PROXY_PASSWORD: ${EGRESS_PROXY_PASSWORD:-change-me-egress}
+      TE_USER_AGENT: ${TE_USER_AGENT:-traffic-estimator/0.1 (+https://github.com/TheAli711/aio-web-scrapper; research crawler)}
+      TE_LOG_LEVEL: ${TE_LOG_LEVEL:-info}
+      TE_ENABLED_COLLECTORS: ${TE_ENABLED_COLLECTORS:-["lists","commoncrawl","crawl","dns"]}
+      TE_LIST_PROVIDERS: ${TE_LIST_PROVIDERS:-["tranco","majestic","openpagerank","crux_top","cc_webgraph"]}
+      TE_CC_WEBGRAPH_TOP_N: ${TE_CC_WEBGRAPH_TOP_N:-5000000}
+      TE_WORKER_CONCURRENCY: ${TE_WORKER_CONCURRENCY:-8}
+      TE_CRAWL_PAGES: ${TE_CRAWL_PAGES:-15}
+    command: ["python", "-m", "traffic_estimator", "api"]
+    volumes:
+      - traffic-data:/data/traffic
+    ports:
+      - "127.0.0.1:${TRAFFIC_API_HOST_PORT:-4200}:4200"
+    networks:
+      - app
+    depends_on:
+      traffic-db:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "wget", "-q", "-O", "-", "http://127.0.0.1:4200/healthz"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+    restart: unless-stopped
+
+  traffic-worker:
+    build:
+      context: apps/traffic-estimator
+    environment:
+      <<: *traffic-env
+      TE_MIGRATE_ON_START: "false"
+    command: ["python", "-m", "traffic_estimator", "worker"]
+    volumes:
+      - traffic-data:/data/traffic
+    networks:
+      - app
+      - backend
+    depends_on:
+      traffic-api:
+        condition: service_healthy
+      egress-proxy:
+        condition: service_healthy
+    mem_limit: 2G
+    restart: unless-stopped
+
+  traffic-scheduler:
+    build:
+      context: apps/traffic-estimator
+    environment:
+      <<: *traffic-env
+      TE_MIGRATE_ON_START: "false"
+    command: ["python", "-m", "traffic_estimator", "scheduler"]
+    networks:
+      - app
+    depends_on:
+      traffic-api:
+        condition: service_healthy
+    restart: unless-stopped
+
   # Static fixture site for end-to-end crawl tests (profile "e2e"), reachable as http://testsite.test
   # (Firecrawl rejects single-label hosts). Reachable only because TRUSTED_TEST_HOSTS=testsite.test
   # explicitly trusts it; see docs/development.md.
@@ -185,3 +275,5 @@ networks:
 volumes:
   app-db-data:
   app-objects:
+  traffic-db-data:
+  traffic-data:

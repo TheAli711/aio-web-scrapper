@@ -11,3 +11,8 @@ coverage/
 /firecrawl/
 .local/
 output/
+# Python (apps/traffic-estimator)
+.venv/
+__pycache__/
+.pytest_cache/
+.ruff_cache/
