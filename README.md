@@ -233,6 +233,9 @@ docker compose up -d --scale traffic-worker=4     # more workers
 ```
 
 Internal service (no auth, loopback only); the Swagger UI is at `http://localhost:4200/docs`.
+Clients use the public API instead: `POST /api/v1/traffic` and `GET /api/v1/traffic/{domain}` with
+any API key ([docs/api.md](docs/api.md#traffic-estimates)); app-api calls the estimator over the
+private network (`TRAFFIC_API_URL`).
 Docs: [docs/traffic-estimator/README.md](docs/traffic-estimator/README.md) (architecture, schema,
 API, adding a collector, training, scaling), [data-sources.md](docs/traffic-estimator/data-sources.md)
 (every source, verified access mechanisms and limits), [features.md](docs/traffic-estimator/features.md),

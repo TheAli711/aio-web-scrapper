@@ -59,6 +59,8 @@ export interface AppConfig {
   allowSignup: boolean;
   firecrawl: { apiUrl: string; apiKey: string; requestTimeoutMs: number; userAgent: string };
   branding: { serviceUrl: string; timeoutMs: number };
+  /** Internal traffic-estimator service; empty serviceUrl disables /traffic (503 TRAFFIC_UNAVAILABLE). */
+  traffic: { serviceUrl: string; timeoutMs: number; waitMs: number };
   storage: { driver: "local"; localDir: string };
   urlPolicy: NetPolicyConfig;
   limits: Limits;
@@ -88,6 +90,11 @@ export function loadConfig(): AppConfig {
     branding: {
       serviceUrl: str("BRAND_SERVICE_URL", "http://localhost:4100").replace(/\/+$/, ""),
       timeoutMs: int("BRAND_SERVICE_TIMEOUT_MS", 60_000, 1000),
+    },
+    traffic: {
+      serviceUrl: str("TRAFFIC_API_URL", "").replace(/\/+$/, ""),
+      timeoutMs: int("TRAFFIC_API_TIMEOUT_MS", 10_000, 1000),
+      waitMs: int("TRAFFIC_WAIT_MS", 60_000, 0, 110_000),
     },
     storage: { driver: "local", localDir: str("STORAGE_LOCAL_DIR", "./data/objects") },
     urlPolicy: createPolicyConfig({

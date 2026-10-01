@@ -19,6 +19,7 @@ import type { AppConfig } from "./config.js";
 import type { Db } from "./db/pool.js";
 import { projects } from "./db/repos.js";
 import type { BrandingService } from "./engine/branding.js";
+import type { TrafficEstimator } from "./engine/traffic.js";
 import type { ScrapingEngine } from "./engine/types.js";
 import { authPlugin, principalOf } from "./http/auth.js";
 import { presentProject } from "./http/present.js";
@@ -28,6 +29,7 @@ import { authRoutes } from "./routes/auth.js";
 import { jobRoutes } from "./routes/jobs.js";
 import { keyRoutes } from "./routes/keys.js";
 import { projectRoutes } from "./routes/projects.js";
+import { trafficRoutes } from "./routes/traffic.js";
 import { JobService } from "./services/jobs.js";
 import { Reconciler } from "./services/reconciler.js";
 import { ResultService } from "./services/results.js";
@@ -39,6 +41,8 @@ export interface AppDeps {
   engine: ScrapingEngine;
   /** Logo / color extraction for the "branding" format; null disables it. */
   branding?: BrandingService | null;
+  /** Website traffic estimates; null disables /traffic (503 TRAFFIC_UNAVAILABLE). */
+  traffic?: TrafficEstimator | null;
   storage: ObjectStorage;
   metrics: Metrics;
   /** Override DNS for tests. */
@@ -190,6 +194,7 @@ export async function buildApp(deps: AppDeps): Promise<FastifyInstance> {
         description:
           "Authenticate with `Authorization: Bearer <API_KEY>`. Create keys in the dashboard under API keys. " +
           "Jobs are asynchronous: create, poll `GET /api/v1/jobs/{id}`, then read results. " +
+          "Traffic estimates: `POST /api/v1/traffic` with a domain, then `GET /api/v1/traffic/{domain}`. " +
           "Errors always have the shape `{ error: { code, message, details?, requestId } }`.",
       },
       components: { securitySchemes: { bearerAuth: { type: "http", scheme: "bearer", bearerFormat: "wsk_..." } } },
@@ -197,6 +202,7 @@ export async function buildApp(deps: AppDeps): Promise<FastifyInstance> {
         { name: "jobs", description: "Scrape and crawl jobs" },
         { name: "results", description: "Page results" },
         { name: "projects", description: "Projects" },
+        { name: "traffic", description: "Website traffic estimates (inferred from public signals, not measured)" },
       ],
     },
   });
@@ -221,6 +227,8 @@ export async function buildApp(deps: AppDeps): Promise<FastifyInstance> {
   await app.register(keyRoutes, { ctx });
   await app.register(jobRoutes, { ctx, base: "/api", accept: ["session", "api_key"], public: false });
   await app.register(jobRoutes, { ctx, base: "/api/v1", accept: ["api_key"], public: true });
+  await app.register(trafficRoutes, { ctx, base: "/api", accept: ["session", "api_key"], public: false });
+  await app.register(trafficRoutes, { ctx, base: "/api/v1", accept: ["api_key"], public: true });
 
   app.get(
     "/api/v1/projects",

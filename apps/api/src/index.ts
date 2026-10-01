@@ -5,6 +5,7 @@ import { createPool } from "./db/pool.js";
 import { sessions } from "./db/repos.js";
 import { HttpBrandingService } from "./engine/branding.js";
 import { FirecrawlEngine } from "./engine/firecrawl.js";
+import { HttpTrafficEstimator } from "./engine/traffic.js";
 import { InMemoryMetrics } from "./observability/metrics.js";
 import { LocalFsStorage } from "./storage/object-storage.js";
 
@@ -16,7 +17,9 @@ async function main() {
   const storage = new LocalFsStorage(config.storage.localDir);
   const metrics = new InMemoryMetrics();
 
-  const app = await buildApp({ config, db, engine, branding, storage, metrics });
+  const traffic = config.traffic.serviceUrl ? new HttpTrafficEstimator(config.traffic) : null;
+  const app = await buildApp({ config, db, engine, branding, traffic, storage, metrics });
+  if (!traffic) app.log.info("TRAFFIC_API_URL not set; /api/v1/traffic answers 503");
 
   if (process.env.MIGRATE_ON_START !== "false") {
     const applied = await migrate(db, (m) => app.log.info(m));

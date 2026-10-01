@@ -5,7 +5,8 @@ Full machine-readable spec: {{BASE_URL}}/api/v1/openapi.json
 Human docs: {{BASE_URL}}/api/v1/docs
 
 This service fetches web pages and returns clean Markdown, HTML or plain text. It can also crawl
-a whole site. Use it whenever you need the content of a public web page.
+a whole site, and estimate a website's monthly traffic. Use it whenever you need the content of a
+public web page.
 
 ## Authentication
 
@@ -106,6 +107,28 @@ Use it to pick pages, then scrape them one by one or crawl with `include_pattern
 Crawls that start at a store's home page use the same catalog: 25% of `max_pages` goes to
 product pages, the rest to the site's other pages (unused slots go to more products).
 
+## Recipe 4: estimate a website's monthly visits
+
+    POST /api/v1/traffic?wait=true
+    {"domain": "example.com"}
+    → {"domain": "example.com", "status": "ready", "refreshing": false,
+       "estimate": {"estimated_monthly_visits": 18256, "lower_bound": 3263, "upper_bound": 102153,
+                    "traffic_bucket": "10K-100K", "confidence": "high", "confidence_score": 0.88,
+                    "model_version": "heuristic_v2", "generated_at": "…"},
+       "error": null, "disclaimer": "…not measured traffic.", "links": {"self": "/api/v1/traffic/example.com"}}
+
+- It is an **estimate from public signals** (rankings, link graph, a crawl, DNS), not analytics.
+  Report the bucket or the range (`lower_bound`–`upper_bound`), not just the point estimate, and
+  say it is an estimate.
+- `domain` can be a URL; it is reduced to the registrable domain (`https://www.shop.example.co.uk/x`
+  → `example.co.uk`).
+- A domain estimated in the last 7 days answers at once; a new one takes 10–30 s. Without
+  `?wait=true` (or if it takes longer than 60 s) you get HTTP 202 with `"status": "pending"`:
+  poll `GET /api/v1/traffic/{domain}` every 5 s until `status` is `ready` or `failed`.
+- Many sites: `POST /api/v1/traffic/bulk` with `{"domains": [...]}` (≤ 100). Ready ones come back
+  with their estimate; poll each `links.self` for the `pending` ones.
+- `{"refresh": true}` re-collects data for a domain estimated in the last 7 days.
+
 ## Other endpoints
 
 | Call | Use |
@@ -131,6 +154,8 @@ Every error has this shape: `{"error": {"code": "…", "message": "…", "detail
 | `NOT_FOUND` | 404 | Wrong id, or not yours |
 | `RATE_LIMITED` | 429 | Wait `details.retryAfterSeconds` (also in the `Retry-After` header), then retry |
 | `TOO_MANY_ACTIVE_JOBS` | 429 | Too many jobs queued or running; wait for some to finish |
+| `INVALID_DOMAIN` | 400 | Traffic: not a public domain. Check spelling. |
+| `TRAFFIC_UNAVAILABLE` | 503 | Traffic estimator unavailable; retry after 30 s |
 
 Codes on a failed job or failed page (`job.error.code`, `result.error.code`):
 
@@ -146,7 +171,8 @@ Codes on a failed job or failed page (`job.error.code`, `result.error.code`):
 
 ## Limits
 
-- 300 requests/min per key; 30 new jobs/min per key; 10 queued or running jobs at a time.
+- 300 requests/min per key; 30/min per key on each create endpoint (`/scrape`, `/crawl`, `/map`,
+  `/traffic`, `/traffic/bulk`); 10 queued or running jobs at a time.
 - Page content is capped at 5 MB per page (`truncated: true` when cut).
 - Only public internet hosts can be fetched. Private networks, localhost and cloud metadata
   addresses are always blocked.

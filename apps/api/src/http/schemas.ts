@@ -271,3 +271,95 @@ export const ScrapeSyncBody = Type.Object(
   { job: JobBody, result: Nullable(ResultWithContent) },
   { title: "ScrapeSyncResponse", description: "Returned by POST /scrape?wait=true when the job finished in time." },
 );
+
+// ------------------------------------------------------------------ traffic estimates
+
+const TrafficDomain = Type.String({
+  minLength: 1,
+  maxLength: 2048,
+  description: "A domain or URL. It is reduced to the registrable domain: `https://www.shop.example.co.uk/x` → `example.co.uk`.",
+  examples: ["example.com"],
+});
+const Refresh = Type.Boolean({
+  description: "Collect fresh data even if the domain was estimated in the last 7 days. Default false (reuse the recent estimate).",
+});
+
+export const TrafficRequest = Type.Object({ domain: TrafficDomain, refresh: Type.Optional(Refresh) }, { additionalProperties: false, title: "TrafficRequest" });
+export type TrafficRequest = Static<typeof TrafficRequest>;
+
+export const TrafficBulkRequest = Type.Object(
+  { domains: Type.Array(TrafficDomain, { minItems: 1, maxItems: 100 }), refresh: Type.Optional(Refresh) },
+  { additionalProperties: false, title: "TrafficBulkRequest" },
+);
+export type TrafficBulkRequest = Static<typeof TrafficBulkRequest>;
+
+const TrafficDetails = Type.Optional(
+  Type.Boolean({ default: false, description: "Include `estimate.details`, the per-signal breakdown (diagnostic; its shape may change)." }),
+);
+
+export const TrafficCreateQuery = Type.Object({
+  wait: Type.Optional(
+    Type.Boolean({
+      default: false,
+      description:
+        "Block until the estimate is ready (a new domain takes 10-30 s; at most 60 s) and return it with HTTP 200. If it is not ready in time you get 202 with `status: pending`; poll `GET /traffic/{domain}`.",
+    }),
+  ),
+  details: TrafficDetails,
+});
+
+export const TrafficGetQuery = Type.Object({ details: TrafficDetails });
+export const TrafficParams = Type.Object({ domain: Type.String({ minLength: 1, maxLength: 253, examples: ["example.com"] }) });
+
+export const TrafficEstimateBody = Type.Object(
+  {
+    estimated_monthly_visits: Nullable(Type.Integer({ description: "Point estimate of monthly visits (all devices, worldwide)" })),
+    lower_bound: Nullable(Type.Integer({ description: "Low end of the plausible range" })),
+    upper_bound: Nullable(Type.Integer({ description: "High end of the plausible range" })),
+    traffic_bucket: Type.String({ description: "`<1K`, `1K-10K`, `10K-100K`, `100K-1M`, `1M-10M` or `10M+` monthly visits" }),
+    confidence: Confidence,
+    confidence_score: Type.Number({ minimum: 0, maximum: 1, description: "How much evidence backs the estimate (not how large it is)" }),
+    model_version: Type.String({ description: "Estimator that produced it, e.g. `heuristic_v2`" }),
+    generated_at: Type.String({ format: "date-time" }),
+    details: Type.Optional(Type.Record(Type.String(), Type.Unknown(), { description: "Only with `details=true`" })),
+  },
+  { title: "TrafficEstimate" },
+);
+
+const TrafficStatus = Type.Union([Type.Literal("pending"), Type.Literal("ready"), Type.Literal("failed")], {
+  description: "pending: being estimated; ready: `estimate` is set; failed: estimation failed and there is no earlier estimate",
+});
+const TrafficFields = {
+  domain: Type.String({ description: "Registrable domain the estimate is for" }),
+  status: TrafficStatus,
+  refreshing: Type.Boolean({ description: "A newer estimate is being computed; `estimate` is the previous one" }),
+  estimate: Nullable(TrafficEstimateBody),
+  error: Nullable(Type.Object({ code: Type.String(), message: Type.String() })),
+};
+
+export const TrafficBody = Type.Object(
+  {
+    ...TrafficFields,
+    disclaimer: Type.String(),
+    links: Type.Object({ self: Type.String() }),
+  },
+  { title: "Traffic" },
+);
+
+export const TrafficBulkBody = Type.Object(
+  {
+    data: Type.Array(
+      Type.Object({
+        input: Type.String({ description: "The string you sent" }),
+        domain: Nullable(Type.String()),
+        status: Type.Union([TrafficStatus, Type.Literal("invalid")]),
+        refreshing: Type.Boolean(),
+        estimate: Nullable(TrafficEstimateBody),
+        error: Nullable(Type.Object({ code: Type.String(), message: Type.String() })),
+        links: Nullable(Type.Object({ self: Type.String() })),
+      }),
+    ),
+    disclaimer: Type.String(),
+  },
+  { title: "TrafficBulk" },
+);

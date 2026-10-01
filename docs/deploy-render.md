@@ -1,7 +1,8 @@
 # Deploying on Render
 
 Production runs in the Render project **webscrapper** (environment `production`, region Oregon,
-network isolation enabled). Every service auto-deploys from `main`.
+network isolation enabled). Render clones the public repository and has no GitHub access, so a
+push does not deploy anything: trigger each service's deploy with `POST /v1/services/<id>/deploys`.
 
 | Render service             | Type            | Source                                               | Plan     |
 |----------------------------|-----------------|------------------------------------------------------|----------|
@@ -34,6 +35,22 @@ only way to the internet. Render private services always have outbound internet 
 is still configured to send all target fetches through `egress-proxy` (which applies the SSRF
 policy), and the API still pre-checks every URL, but nothing at the network layer stops a
 direct connection.
+
+## Traffic estimates
+
+`/api/v1/traffic` on `webscrapper-api` calls the traffic estimator (`apps/traffic-estimator`) over
+the private network. Set on `webscrapper-api`:
+
+| Variable | Value |
+|---|---|
+| `TRAFFIC_API_URL` | `http://<traffic-api service slug>:4200` |
+| `TRAFFIC_WAIT_MS` | optional, default `60000` (cap for `POST /traffic?wait=true`) |
+
+Unset, the endpoints answer `503 TRAFFIC_UNAVAILABLE` ("not enabled on this server"). The
+estimator itself is not deployed on Render yet. It needs its own API (private service), worker
+(background worker with a disk of at least 10 GB for the ranked lists and the web-graph index),
+scheduler and Postgres, with the `TE_*` variables from `docker-compose.yml`; the worker reaches
+the internet through `webscrapper-egress-proxy` (`TE_HTTP_PROXY`).
 
 ## Accounts
 

@@ -32,7 +32,7 @@ POST /domains            traffic-api (FastAPI :4200, loopback)
 
 | Component | Path | Role |
 |---|---|---|
-| API | `src/traffic_estimator/api/` | ingestion, job status, features, estimates. No auth: internal service, published on 127.0.0.1:4200 only |
+| API | `src/traffic_estimator/api/` | ingestion, job status, features, estimates. No auth: internal service, published on 127.0.0.1:4200 only. Clients go through app-api's `/api/v1/traffic` (API keys; [api.md](../api.md#traffic-estimates)) |
 | Pipeline | `pipeline.py` | run creation, collector task execution + caching, finalize (features → estimate) |
 | Queue | `queue.py` | Postgres task queue: idempotent enqueue (dedupe key), global per-kind concurrency caps, retries with exponential back-off, lease recovery |
 | Worker | `worker.py` | claims tasks, bounded concurrency, heartbeats, deferral, graceful stop |

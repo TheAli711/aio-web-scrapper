@@ -1,5 +1,6 @@
 /** Map DB rows to public JSON shapes. Internal columns (engine ids, leases, cursors) never leave here. */
 import type { ApiKey, Job, Project, ResultContent, ResultRow } from "../domain.js";
+import type { TrafficState } from "../engine/traffic.js";
 
 const iso = (d: Date | null | undefined) => (d ? new Date(d).toISOString() : null);
 
@@ -76,5 +77,22 @@ export function presentApiKey(k: ApiKey) {
     last_used_at: iso(k.last_used_at),
     revoked_at: iso(k.revoked_at),
     active: !k.revoked_at,
+  };
+}
+
+export const TRAFFIC_DISCLAIMER =
+  "Estimated from public signals (popularity rankings, link graphs, our crawl and DNS); not measured traffic.";
+
+export function presentTraffic(s: TrafficState, basePath = "/api/v1") {
+  const running = s.run?.status === "queued" || s.run?.status === "running";
+  const failed = s.run?.status === "failed" || s.run?.status === "cancelled";
+  const status: "pending" | "ready" | "failed" = s.estimate ? "ready" : failed ? "failed" : "pending";
+  return {
+    domain: s.domain,
+    status,
+    refreshing: Boolean(s.estimate) && running,
+    estimate: s.estimate,
+    error: status === "failed" ? { code: "ESTIMATION_FAILED", message: s.run?.error || "The estimate could not be computed" } : null,
+    links: { self: `${basePath}/traffic/${s.domain}` },
   };
 }

@@ -3,7 +3,7 @@
   "info": {
     "title": "Web Scraper Public API",
     "version": "1.0.0",
-    "description": "Authenticate with `Authorization: Bearer <API_KEY>`. Create keys in the dashboard under API keys. Jobs are asynchronous: create, poll `GET /api/v1/jobs/{id}`, then read results. Errors always have the shape `{ error: { code, message, details?, requestId } }`."
+    "description": "Authenticate with `Authorization: Bearer <API_KEY>`. Create keys in the dashboard under API keys. Jobs are asynchronous: create, poll `GET /api/v1/jobs/{id}`, then read results. Traffic estimates: `POST /api/v1/traffic` with a domain, then `GET /api/v1/traffic/{domain}`. Errors always have the shape `{ error: { code, message, details?, requestId } }`."
   },
   "components": {
     "securitySchemes": {
@@ -4797,6 +4797,1696 @@
         }
       }
     },
+    "/api/v1/traffic": {
+      "post": {
+        "summary": "Estimate a website's monthly visits",
+        "tags": [
+          "traffic"
+        ],
+        "description": "Starts an estimate for the domain, or returns the existing one if it is less than 7 days old (`refresh: true` forces new data). Returns 200 when the estimate is ready and 202 while it is being computed; poll `GET /traffic/{domain}`. With `?wait=true` the request blocks until it is ready (a new domain usually takes 10-30 s). Estimates are inferred from public signals, not measured traffic.",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": [
+                  "domain"
+                ],
+                "properties": {
+                  "domain": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 2048,
+                    "description": "A domain or URL. It is reduced to the registrable domain: `https://www.shop.example.co.uk/x` → `example.co.uk`.",
+                    "example": "example.com"
+                  },
+                  "refresh": {
+                    "type": "boolean",
+                    "description": "Collect fresh data even if the domain was estimated in the last 7 days. Default false (reuse the recent estimate)."
+                  }
+                },
+                "additionalProperties": false,
+                "title": "TrafficRequest"
+              }
+            }
+          }
+        },
+        "parameters": [
+          {
+            "schema": {
+              "type": "boolean",
+              "default": false
+            },
+            "in": "query",
+            "name": "wait",
+            "required": false,
+            "description": "Block until the estimate is ready (a new domain takes 10-30 s; at most 60 s) and return it with HTTP 200. If it is not ready in time you get 202 with `status: pending`; poll `GET /traffic/{domain}`."
+          },
+          {
+            "schema": {
+              "type": "boolean",
+              "default": false
+            },
+            "in": "query",
+            "name": "details",
+            "required": false,
+            "description": "Include `estimate.details`, the per-signal breakdown (diagnostic; its shape may change)."
+          }
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Default Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "domain",
+                    "status",
+                    "refreshing",
+                    "estimate",
+                    "error",
+                    "disclaimer",
+                    "links"
+                  ],
+                  "properties": {
+                    "domain": {
+                      "type": "string",
+                      "description": "Registrable domain the estimate is for"
+                    },
+                    "status": {
+                      "anyOf": [
+                        {
+                          "type": "string",
+                          "enum": [
+                            "pending"
+                          ]
+                        },
+                        {
+                          "type": "string",
+                          "enum": [
+                            "ready"
+                          ]
+                        },
+                        {
+                          "type": "string",
+                          "enum": [
+                            "failed"
+                          ]
+                        }
+                      ],
+                      "description": "pending: being estimated; ready: `estimate` is set; failed: estimation failed and there is no earlier estimate"
+                    },
+                    "refreshing": {
+                      "type": "boolean",
+                      "description": "A newer estimate is being computed; `estimate` is the previous one"
+                    },
+                    "estimate": {
+                      "anyOf": [
+                        {
+                          "type": "object",
+                          "required": [
+                            "estimated_monthly_visits",
+                            "lower_bound",
+                            "upper_bound",
+                            "traffic_bucket",
+                            "confidence",
+                            "confidence_score",
+                            "model_version",
+                            "generated_at"
+                          ],
+                          "properties": {
+                            "estimated_monthly_visits": {
+                              "anyOf": [
+                                {
+                                  "type": "integer",
+                                  "description": "Point estimate of monthly visits (all devices, worldwide)"
+                                },
+                                {
+                                  "type": "null"
+                                }
+                              ]
+                            },
+                            "lower_bound": {
+                              "anyOf": [
+                                {
+                                  "type": "integer",
+                                  "description": "Low end of the plausible range"
+                                },
+                                {
+                                  "type": "null"
+                                }
+                              ]
+                            },
+                            "upper_bound": {
+                              "anyOf": [
+                                {
+                                  "type": "integer",
+                                  "description": "High end of the plausible range"
+                                },
+                                {
+                                  "type": "null"
+                                }
+                              ]
+                            },
+                            "traffic_bucket": {
+                              "type": "string",
+                              "description": "`<1K`, `1K-10K`, `10K-100K`, `100K-1M`, `1M-10M` or `10M+` monthly visits"
+                            },
+                            "confidence": {
+                              "anyOf": [
+                                {
+                                  "type": "string",
+                                  "enum": [
+                                    "high"
+                                  ]
+                                },
+                                {
+                                  "type": "string",
+                                  "enum": [
+                                    "medium"
+                                  ]
+                                },
+                                {
+                                  "type": "string",
+                                  "enum": [
+                                    "low"
+                                  ]
+                                }
+                              ]
+                            },
+                            "confidence_score": {
+                              "type": "number",
+                              "minimum": 0,
+                              "maximum": 1,
+                              "description": "How much evidence backs the estimate (not how large it is)"
+                            },
+                            "model_version": {
+                              "type": "string",
+                              "description": "Estimator that produced it, e.g. `heuristic_v2`"
+                            },
+                            "generated_at": {
+                              "type": "string",
+                              "format": "date-time"
+                            },
+                            "details": {
+                              "type": "object",
+                              "description": "Only with `details=true`",
+                              "additionalProperties": {}
+                            }
+                          },
+                          "title": "TrafficEstimate"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
+                    "error": {
+                      "anyOf": [
+                        {
+                          "type": "object",
+                          "required": [
+                            "code",
+                            "message"
+                          ],
+                          "properties": {
+                            "code": {
+                              "type": "string"
+                            },
+                            "message": {
+                              "type": "string"
+                            }
+                          }
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
+                    "disclaimer": {
+                      "type": "string"
+                    },
+                    "links": {
+                      "type": "object",
+                      "required": [
+                        "self"
+                      ],
+                      "properties": {
+                        "self": {
+                          "type": "string"
+                        }
+                      }
+                    }
+                  },
+                  "title": "Traffic"
+                }
+              }
+            }
+          },
+          "202": {
+            "description": "Default Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "domain",
+                    "status",
+                    "refreshing",
+                    "estimate",
+                    "error",
+                    "disclaimer",
+                    "links"
+                  ],
+                  "properties": {
+                    "domain": {
+                      "type": "string",
+                      "description": "Registrable domain the estimate is for"
+                    },
+                    "status": {
+                      "anyOf": [
+                        {
+                          "type": "string",
+                          "enum": [
+                            "pending"
+                          ]
+                        },
+                        {
+                          "type": "string",
+                          "enum": [
+                            "ready"
+                          ]
+                        },
+                        {
+                          "type": "string",
+                          "enum": [
+                            "failed"
+                          ]
+                        }
+                      ],
+                      "description": "pending: being estimated; ready: `estimate` is set; failed: estimation failed and there is no earlier estimate"
+                    },
+                    "refreshing": {
+                      "type": "boolean",
+                      "description": "A newer estimate is being computed; `estimate` is the previous one"
+                    },
+                    "estimate": {
+                      "anyOf": [
+                        {
+                          "type": "object",
+                          "required": [
+                            "estimated_monthly_visits",
+                            "lower_bound",
+                            "upper_bound",
+                            "traffic_bucket",
+                            "confidence",
+                            "confidence_score",
+                            "model_version",
+                            "generated_at"
+                          ],
+                          "properties": {
+                            "estimated_monthly_visits": {
+                              "anyOf": [
+                                {
+                                  "type": "integer",
+                                  "description": "Point estimate of monthly visits (all devices, worldwide)"
+                                },
+                                {
+                                  "type": "null"
+                                }
+                              ]
+                            },
+                            "lower_bound": {
+                              "anyOf": [
+                                {
+                                  "type": "integer",
+                                  "description": "Low end of the plausible range"
+                                },
+                                {
+                                  "type": "null"
+                                }
+                              ]
+                            },
+                            "upper_bound": {
+                              "anyOf": [
+                                {
+                                  "type": "integer",
+                                  "description": "High end of the plausible range"
+                                },
+                                {
+                                  "type": "null"
+                                }
+                              ]
+                            },
+                            "traffic_bucket": {
+                              "type": "string",
+                              "description": "`<1K`, `1K-10K`, `10K-100K`, `100K-1M`, `1M-10M` or `10M+` monthly visits"
+                            },
+                            "confidence": {
+                              "anyOf": [
+                                {
+                                  "type": "string",
+                                  "enum": [
+                                    "high"
+                                  ]
+                                },
+                                {
+                                  "type": "string",
+                                  "enum": [
+                                    "medium"
+                                  ]
+                                },
+                                {
+                                  "type": "string",
+                                  "enum": [
+                                    "low"
+                                  ]
+                                }
+                              ]
+                            },
+                            "confidence_score": {
+                              "type": "number",
+                              "minimum": 0,
+                              "maximum": 1,
+                              "description": "How much evidence backs the estimate (not how large it is)"
+                            },
+                            "model_version": {
+                              "type": "string",
+                              "description": "Estimator that produced it, e.g. `heuristic_v2`"
+                            },
+                            "generated_at": {
+                              "type": "string",
+                              "format": "date-time"
+                            },
+                            "details": {
+                              "type": "object",
+                              "description": "Only with `details=true`",
+                              "additionalProperties": {}
+                            }
+                          },
+                          "title": "TrafficEstimate"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
+                    "error": {
+                      "anyOf": [
+                        {
+                          "type": "object",
+                          "required": [
+                            "code",
+                            "message"
+                          ],
+                          "properties": {
+                            "code": {
+                              "type": "string"
+                            },
+                            "message": {
+                              "type": "string"
+                            }
+                          }
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
+                    "disclaimer": {
+                      "type": "string"
+                    },
+                    "links": {
+                      "type": "object",
+                      "required": [
+                        "self"
+                      ],
+                      "properties": {
+                        "self": {
+                          "type": "string"
+                        }
+                      }
+                    }
+                  },
+                  "title": "Traffic"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Default Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "error"
+                  ],
+                  "properties": {
+                    "error": {
+                      "type": "object",
+                      "required": [
+                        "code",
+                        "message",
+                        "requestId"
+                      ],
+                      "properties": {
+                        "code": {
+                          "type": "string",
+                          "description": "Stable machine-readable error code",
+                          "example": "INVALID_URL"
+                        },
+                        "message": {
+                          "type": "string"
+                        },
+                        "details": {
+                          "type": "object",
+                          "additionalProperties": {}
+                        },
+                        "requestId": {
+                          "type": "string"
+                        }
+                      }
+                    }
+                  },
+                  "title": "Error"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Default Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "error"
+                  ],
+                  "properties": {
+                    "error": {
+                      "type": "object",
+                      "required": [
+                        "code",
+                        "message",
+                        "requestId"
+                      ],
+                      "properties": {
+                        "code": {
+                          "type": "string",
+                          "description": "Stable machine-readable error code",
+                          "example": "INVALID_URL"
+                        },
+                        "message": {
+                          "type": "string"
+                        },
+                        "details": {
+                          "type": "object",
+                          "additionalProperties": {}
+                        },
+                        "requestId": {
+                          "type": "string"
+                        }
+                      }
+                    }
+                  },
+                  "title": "Error"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Default Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "error"
+                  ],
+                  "properties": {
+                    "error": {
+                      "type": "object",
+                      "required": [
+                        "code",
+                        "message",
+                        "requestId"
+                      ],
+                      "properties": {
+                        "code": {
+                          "type": "string",
+                          "description": "Stable machine-readable error code",
+                          "example": "INVALID_URL"
+                        },
+                        "message": {
+                          "type": "string"
+                        },
+                        "details": {
+                          "type": "object",
+                          "additionalProperties": {}
+                        },
+                        "requestId": {
+                          "type": "string"
+                        }
+                      }
+                    }
+                  },
+                  "title": "Error"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Default Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "error"
+                  ],
+                  "properties": {
+                    "error": {
+                      "type": "object",
+                      "required": [
+                        "code",
+                        "message",
+                        "requestId"
+                      ],
+                      "properties": {
+                        "code": {
+                          "type": "string",
+                          "description": "Stable machine-readable error code",
+                          "example": "INVALID_URL"
+                        },
+                        "message": {
+                          "type": "string"
+                        },
+                        "details": {
+                          "type": "object",
+                          "additionalProperties": {}
+                        },
+                        "requestId": {
+                          "type": "string"
+                        }
+                      }
+                    }
+                  },
+                  "title": "Error"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Default Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "error"
+                  ],
+                  "properties": {
+                    "error": {
+                      "type": "object",
+                      "required": [
+                        "code",
+                        "message",
+                        "requestId"
+                      ],
+                      "properties": {
+                        "code": {
+                          "type": "string",
+                          "description": "Stable machine-readable error code",
+                          "example": "INVALID_URL"
+                        },
+                        "message": {
+                          "type": "string"
+                        },
+                        "details": {
+                          "type": "object",
+                          "additionalProperties": {}
+                        },
+                        "requestId": {
+                          "type": "string"
+                        }
+                      }
+                    }
+                  },
+                  "title": "Error"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Default Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "error"
+                  ],
+                  "properties": {
+                    "error": {
+                      "type": "object",
+                      "required": [
+                        "code",
+                        "message",
+                        "requestId"
+                      ],
+                      "properties": {
+                        "code": {
+                          "type": "string",
+                          "description": "Stable machine-readable error code",
+                          "example": "INVALID_URL"
+                        },
+                        "message": {
+                          "type": "string"
+                        },
+                        "details": {
+                          "type": "object",
+                          "additionalProperties": {}
+                        },
+                        "requestId": {
+                          "type": "string"
+                        }
+                      }
+                    }
+                  },
+                  "title": "Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/traffic/{domain}": {
+      "get": {
+        "summary": "Get a domain's traffic estimate",
+        "tags": [
+          "traffic"
+        ],
+        "description": "The latest estimate for a domain requested earlier with `POST /traffic` (by anyone: estimates describe public sites and are shared). `status` is `pending` until the first estimate exists; `refreshing` is true while a newer one is computed. 404 if never requested.",
+        "parameters": [
+          {
+            "schema": {
+              "type": "boolean",
+              "default": false
+            },
+            "in": "query",
+            "name": "details",
+            "required": false,
+            "description": "Include `estimate.details`, the per-signal breakdown (diagnostic; its shape may change)."
+          },
+          {
+            "schema": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 253
+            },
+            "example": "example.com",
+            "in": "path",
+            "name": "domain",
+            "required": true
+          }
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Default Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "domain",
+                    "status",
+                    "refreshing",
+                    "estimate",
+                    "error",
+                    "disclaimer",
+                    "links"
+                  ],
+                  "properties": {
+                    "domain": {
+                      "type": "string",
+                      "description": "Registrable domain the estimate is for"
+                    },
+                    "status": {
+                      "anyOf": [
+                        {
+                          "type": "string",
+                          "enum": [
+                            "pending"
+                          ]
+                        },
+                        {
+                          "type": "string",
+                          "enum": [
+                            "ready"
+                          ]
+                        },
+                        {
+                          "type": "string",
+                          "enum": [
+                            "failed"
+                          ]
+                        }
+                      ],
+                      "description": "pending: being estimated; ready: `estimate` is set; failed: estimation failed and there is no earlier estimate"
+                    },
+                    "refreshing": {
+                      "type": "boolean",
+                      "description": "A newer estimate is being computed; `estimate` is the previous one"
+                    },
+                    "estimate": {
+                      "anyOf": [
+                        {
+                          "type": "object",
+                          "required": [
+                            "estimated_monthly_visits",
+                            "lower_bound",
+                            "upper_bound",
+                            "traffic_bucket",
+                            "confidence",
+                            "confidence_score",
+                            "model_version",
+                            "generated_at"
+                          ],
+                          "properties": {
+                            "estimated_monthly_visits": {
+                              "anyOf": [
+                                {
+                                  "type": "integer",
+                                  "description": "Point estimate of monthly visits (all devices, worldwide)"
+                                },
+                                {
+                                  "type": "null"
+                                }
+                              ]
+                            },
+                            "lower_bound": {
+                              "anyOf": [
+                                {
+                                  "type": "integer",
+                                  "description": "Low end of the plausible range"
+                                },
+                                {
+                                  "type": "null"
+                                }
+                              ]
+                            },
+                            "upper_bound": {
+                              "anyOf": [
+                                {
+                                  "type": "integer",
+                                  "description": "High end of the plausible range"
+                                },
+                                {
+                                  "type": "null"
+                                }
+                              ]
+                            },
+                            "traffic_bucket": {
+                              "type": "string",
+                              "description": "`<1K`, `1K-10K`, `10K-100K`, `100K-1M`, `1M-10M` or `10M+` monthly visits"
+                            },
+                            "confidence": {
+                              "anyOf": [
+                                {
+                                  "type": "string",
+                                  "enum": [
+                                    "high"
+                                  ]
+                                },
+                                {
+                                  "type": "string",
+                                  "enum": [
+                                    "medium"
+                                  ]
+                                },
+                                {
+                                  "type": "string",
+                                  "enum": [
+                                    "low"
+                                  ]
+                                }
+                              ]
+                            },
+                            "confidence_score": {
+                              "type": "number",
+                              "minimum": 0,
+                              "maximum": 1,
+                              "description": "How much evidence backs the estimate (not how large it is)"
+                            },
+                            "model_version": {
+                              "type": "string",
+                              "description": "Estimator that produced it, e.g. `heuristic_v2`"
+                            },
+                            "generated_at": {
+                              "type": "string",
+                              "format": "date-time"
+                            },
+                            "details": {
+                              "type": "object",
+                              "description": "Only with `details=true`",
+                              "additionalProperties": {}
+                            }
+                          },
+                          "title": "TrafficEstimate"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
+                    "error": {
+                      "anyOf": [
+                        {
+                          "type": "object",
+                          "required": [
+                            "code",
+                            "message"
+                          ],
+                          "properties": {
+                            "code": {
+                              "type": "string"
+                            },
+                            "message": {
+                              "type": "string"
+                            }
+                          }
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
+                    "disclaimer": {
+                      "type": "string"
+                    },
+                    "links": {
+                      "type": "object",
+                      "required": [
+                        "self"
+                      ],
+                      "properties": {
+                        "self": {
+                          "type": "string"
+                        }
+                      }
+                    }
+                  },
+                  "title": "Traffic"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Default Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "error"
+                  ],
+                  "properties": {
+                    "error": {
+                      "type": "object",
+                      "required": [
+                        "code",
+                        "message",
+                        "requestId"
+                      ],
+                      "properties": {
+                        "code": {
+                          "type": "string",
+                          "description": "Stable machine-readable error code",
+                          "example": "INVALID_URL"
+                        },
+                        "message": {
+                          "type": "string"
+                        },
+                        "details": {
+                          "type": "object",
+                          "additionalProperties": {}
+                        },
+                        "requestId": {
+                          "type": "string"
+                        }
+                      }
+                    }
+                  },
+                  "title": "Error"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Default Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "error"
+                  ],
+                  "properties": {
+                    "error": {
+                      "type": "object",
+                      "required": [
+                        "code",
+                        "message",
+                        "requestId"
+                      ],
+                      "properties": {
+                        "code": {
+                          "type": "string",
+                          "description": "Stable machine-readable error code",
+                          "example": "INVALID_URL"
+                        },
+                        "message": {
+                          "type": "string"
+                        },
+                        "details": {
+                          "type": "object",
+                          "additionalProperties": {}
+                        },
+                        "requestId": {
+                          "type": "string"
+                        }
+                      }
+                    }
+                  },
+                  "title": "Error"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Default Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "error"
+                  ],
+                  "properties": {
+                    "error": {
+                      "type": "object",
+                      "required": [
+                        "code",
+                        "message",
+                        "requestId"
+                      ],
+                      "properties": {
+                        "code": {
+                          "type": "string",
+                          "description": "Stable machine-readable error code",
+                          "example": "INVALID_URL"
+                        },
+                        "message": {
+                          "type": "string"
+                        },
+                        "details": {
+                          "type": "object",
+                          "additionalProperties": {}
+                        },
+                        "requestId": {
+                          "type": "string"
+                        }
+                      }
+                    }
+                  },
+                  "title": "Error"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Default Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "error"
+                  ],
+                  "properties": {
+                    "error": {
+                      "type": "object",
+                      "required": [
+                        "code",
+                        "message",
+                        "requestId"
+                      ],
+                      "properties": {
+                        "code": {
+                          "type": "string",
+                          "description": "Stable machine-readable error code",
+                          "example": "INVALID_URL"
+                        },
+                        "message": {
+                          "type": "string"
+                        },
+                        "details": {
+                          "type": "object",
+                          "additionalProperties": {}
+                        },
+                        "requestId": {
+                          "type": "string"
+                        }
+                      }
+                    }
+                  },
+                  "title": "Error"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Default Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "error"
+                  ],
+                  "properties": {
+                    "error": {
+                      "type": "object",
+                      "required": [
+                        "code",
+                        "message",
+                        "requestId"
+                      ],
+                      "properties": {
+                        "code": {
+                          "type": "string",
+                          "description": "Stable machine-readable error code",
+                          "example": "INVALID_URL"
+                        },
+                        "message": {
+                          "type": "string"
+                        },
+                        "details": {
+                          "type": "object",
+                          "additionalProperties": {}
+                        },
+                        "requestId": {
+                          "type": "string"
+                        }
+                      }
+                    }
+                  },
+                  "title": "Error"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Default Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "error"
+                  ],
+                  "properties": {
+                    "error": {
+                      "type": "object",
+                      "required": [
+                        "code",
+                        "message",
+                        "requestId"
+                      ],
+                      "properties": {
+                        "code": {
+                          "type": "string",
+                          "description": "Stable machine-readable error code",
+                          "example": "INVALID_URL"
+                        },
+                        "message": {
+                          "type": "string"
+                        },
+                        "details": {
+                          "type": "object",
+                          "additionalProperties": {}
+                        },
+                        "requestId": {
+                          "type": "string"
+                        }
+                      }
+                    }
+                  },
+                  "title": "Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/traffic/bulk": {
+      "post": {
+        "summary": "Estimate up to 100 websites at once",
+        "tags": [
+          "traffic"
+        ],
+        "description": "Submits every domain like `POST /traffic` and answers at once (202): domains estimated in the last 7 days come back `ready`, new ones `pending` (poll `GET /traffic/{domain}`), unusable input `invalid`. Items keep the order of `domains`.",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": [
+                  "domains"
+                ],
+                "properties": {
+                  "domains": {
+                    "type": "array",
+                    "items": {
+                      "type": "string",
+                      "minLength": 1,
+                      "maxLength": 2048,
+                      "description": "A domain or URL. It is reduced to the registrable domain: `https://www.shop.example.co.uk/x` → `example.co.uk`.",
+                      "example": "example.com"
+                    },
+                    "minItems": 1,
+                    "maxItems": 100
+                  },
+                  "refresh": {
+                    "type": "boolean",
+                    "description": "Collect fresh data even if the domain was estimated in the last 7 days. Default false (reuse the recent estimate)."
+                  }
+                },
+                "additionalProperties": false,
+                "title": "TrafficBulkRequest"
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "responses": {
+          "202": {
+            "description": "Default Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "data",
+                    "disclaimer"
+                  ],
+                  "properties": {
+                    "data": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "required": [
+                          "input",
+                          "domain",
+                          "status",
+                          "refreshing",
+                          "estimate",
+                          "error",
+                          "links"
+                        ],
+                        "properties": {
+                          "input": {
+                            "type": "string",
+                            "description": "The string you sent"
+                          },
+                          "domain": {
+                            "anyOf": [
+                              {
+                                "type": "string"
+                              },
+                              {
+                                "type": "null"
+                              }
+                            ]
+                          },
+                          "status": {
+                            "anyOf": [
+                              {
+                                "anyOf": [
+                                  {
+                                    "type": "string",
+                                    "enum": [
+                                      "pending"
+                                    ]
+                                  },
+                                  {
+                                    "type": "string",
+                                    "enum": [
+                                      "ready"
+                                    ]
+                                  },
+                                  {
+                                    "type": "string",
+                                    "enum": [
+                                      "failed"
+                                    ]
+                                  }
+                                ],
+                                "description": "pending: being estimated; ready: `estimate` is set; failed: estimation failed and there is no earlier estimate"
+                              },
+                              {
+                                "type": "string",
+                                "enum": [
+                                  "invalid"
+                                ]
+                              }
+                            ]
+                          },
+                          "refreshing": {
+                            "type": "boolean"
+                          },
+                          "estimate": {
+                            "anyOf": [
+                              {
+                                "type": "object",
+                                "required": [
+                                  "estimated_monthly_visits",
+                                  "lower_bound",
+                                  "upper_bound",
+                                  "traffic_bucket",
+                                  "confidence",
+                                  "confidence_score",
+                                  "model_version",
+                                  "generated_at"
+                                ],
+                                "properties": {
+                                  "estimated_monthly_visits": {
+                                    "anyOf": [
+                                      {
+                                        "type": "integer",
+                                        "description": "Point estimate of monthly visits (all devices, worldwide)"
+                                      },
+                                      {
+                                        "type": "null"
+                                      }
+                                    ]
+                                  },
+                                  "lower_bound": {
+                                    "anyOf": [
+                                      {
+                                        "type": "integer",
+                                        "description": "Low end of the plausible range"
+                                      },
+                                      {
+                                        "type": "null"
+                                      }
+                                    ]
+                                  },
+                                  "upper_bound": {
+                                    "anyOf": [
+                                      {
+                                        "type": "integer",
+                                        "description": "High end of the plausible range"
+                                      },
+                                      {
+                                        "type": "null"
+                                      }
+                                    ]
+                                  },
+                                  "traffic_bucket": {
+                                    "type": "string",
+                                    "description": "`<1K`, `1K-10K`, `10K-100K`, `100K-1M`, `1M-10M` or `10M+` monthly visits"
+                                  },
+                                  "confidence": {
+                                    "anyOf": [
+                                      {
+                                        "type": "string",
+                                        "enum": [
+                                          "high"
+                                        ]
+                                      },
+                                      {
+                                        "type": "string",
+                                        "enum": [
+                                          "medium"
+                                        ]
+                                      },
+                                      {
+                                        "type": "string",
+                                        "enum": [
+                                          "low"
+                                        ]
+                                      }
+                                    ]
+                                  },
+                                  "confidence_score": {
+                                    "type": "number",
+                                    "minimum": 0,
+                                    "maximum": 1,
+                                    "description": "How much evidence backs the estimate (not how large it is)"
+                                  },
+                                  "model_version": {
+                                    "type": "string",
+                                    "description": "Estimator that produced it, e.g. `heuristic_v2`"
+                                  },
+                                  "generated_at": {
+                                    "type": "string",
+                                    "format": "date-time"
+                                  },
+                                  "details": {
+                                    "type": "object",
+                                    "description": "Only with `details=true`",
+                                    "additionalProperties": {}
+                                  }
+                                },
+                                "title": "TrafficEstimate"
+                              },
+                              {
+                                "type": "null"
+                              }
+                            ]
+                          },
+                          "error": {
+                            "anyOf": [
+                              {
+                                "type": "object",
+                                "required": [
+                                  "code",
+                                  "message"
+                                ],
+                                "properties": {
+                                  "code": {
+                                    "type": "string"
+                                  },
+                                  "message": {
+                                    "type": "string"
+                                  }
+                                }
+                              },
+                              {
+                                "type": "null"
+                              }
+                            ]
+                          },
+                          "links": {
+                            "anyOf": [
+                              {
+                                "type": "object",
+                                "required": [
+                                  "self"
+                                ],
+                                "properties": {
+                                  "self": {
+                                    "type": "string"
+                                  }
+                                }
+                              },
+                              {
+                                "type": "null"
+                              }
+                            ]
+                          }
+                        }
+                      }
+                    },
+                    "disclaimer": {
+                      "type": "string"
+                    }
+                  },
+                  "title": "TrafficBulk"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Default Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "error"
+                  ],
+                  "properties": {
+                    "error": {
+                      "type": "object",
+                      "required": [
+                        "code",
+                        "message",
+                        "requestId"
+                      ],
+                      "properties": {
+                        "code": {
+                          "type": "string",
+                          "description": "Stable machine-readable error code",
+                          "example": "INVALID_URL"
+                        },
+                        "message": {
+                          "type": "string"
+                        },
+                        "details": {
+                          "type": "object",
+                          "additionalProperties": {}
+                        },
+                        "requestId": {
+                          "type": "string"
+                        }
+                      }
+                    }
+                  },
+                  "title": "Error"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Default Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "error"
+                  ],
+                  "properties": {
+                    "error": {
+                      "type": "object",
+                      "required": [
+                        "code",
+                        "message",
+                        "requestId"
+                      ],
+                      "properties": {
+                        "code": {
+                          "type": "string",
+                          "description": "Stable machine-readable error code",
+                          "example": "INVALID_URL"
+                        },
+                        "message": {
+                          "type": "string"
+                        },
+                        "details": {
+                          "type": "object",
+                          "additionalProperties": {}
+                        },
+                        "requestId": {
+                          "type": "string"
+                        }
+                      }
+                    }
+                  },
+                  "title": "Error"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Default Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "error"
+                  ],
+                  "properties": {
+                    "error": {
+                      "type": "object",
+                      "required": [
+                        "code",
+                        "message",
+                        "requestId"
+                      ],
+                      "properties": {
+                        "code": {
+                          "type": "string",
+                          "description": "Stable machine-readable error code",
+                          "example": "INVALID_URL"
+                        },
+                        "message": {
+                          "type": "string"
+                        },
+                        "details": {
+                          "type": "object",
+                          "additionalProperties": {}
+                        },
+                        "requestId": {
+                          "type": "string"
+                        }
+                      }
+                    }
+                  },
+                  "title": "Error"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Default Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "error"
+                  ],
+                  "properties": {
+                    "error": {
+                      "type": "object",
+                      "required": [
+                        "code",
+                        "message",
+                        "requestId"
+                      ],
+                      "properties": {
+                        "code": {
+                          "type": "string",
+                          "description": "Stable machine-readable error code",
+                          "example": "INVALID_URL"
+                        },
+                        "message": {
+                          "type": "string"
+                        },
+                        "details": {
+                          "type": "object",
+                          "additionalProperties": {}
+                        },
+                        "requestId": {
+                          "type": "string"
+                        }
+                      }
+                    }
+                  },
+                  "title": "Error"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Default Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "error"
+                  ],
+                  "properties": {
+                    "error": {
+                      "type": "object",
+                      "required": [
+                        "code",
+                        "message",
+                        "requestId"
+                      ],
+                      "properties": {
+                        "code": {
+                          "type": "string",
+                          "description": "Stable machine-readable error code",
+                          "example": "INVALID_URL"
+                        },
+                        "message": {
+                          "type": "string"
+                        },
+                        "details": {
+                          "type": "object",
+                          "additionalProperties": {}
+                        },
+                        "requestId": {
+                          "type": "string"
+                        }
+                      }
+                    }
+                  },
+                  "title": "Error"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Default Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "error"
+                  ],
+                  "properties": {
+                    "error": {
+                      "type": "object",
+                      "required": [
+                        "code",
+                        "message",
+                        "requestId"
+                      ],
+                      "properties": {
+                        "code": {
+                          "type": "string",
+                          "description": "Stable machine-readable error code",
+                          "example": "INVALID_URL"
+                        },
+                        "message": {
+                          "type": "string"
+                        },
+                        "details": {
+                          "type": "object",
+                          "additionalProperties": {}
+                        },
+                        "requestId": {
+                          "type": "string"
+                        }
+                      }
+                    }
+                  },
+                  "title": "Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/v1/projects": {
       "get": {
         "summary": "List your projects (to find a project_id)",
@@ -4828,6 +6518,10 @@
     {
       "name": "projects",
       "description": "Projects"
+    },
+    {
+      "name": "traffic",
+      "description": "Website traffic estimates (inferred from public signals, not measured)"
     }
   ]
 }

@@ -6,7 +6,9 @@ import { migrate } from "../src/db/migrate.js";
 import { createPool, type Db } from "../src/db/pool.js";
 import type { CrawlJobOptions, ScrapeJobOptions } from "../src/domain.js";
 import type { BrandingOutcome, BrandingService } from "../src/engine/branding.js";
+import type { TrafficEstimate, TrafficEstimator, TrafficState, TrafficSubmission } from "../src/engine/traffic.js";
 import type { CrawlSnapshot, MapOptions, MapResult, PageResult, ScrapingEngine } from "../src/engine/types.js";
+import { AppError } from "../src/lib/errors.js";
 import { InMemoryMetrics } from "../src/observability/metrics.js";
 import { MemoryStorage } from "../src/storage/object-storage.js";
 
@@ -156,11 +158,88 @@ export class FakeBranding implements BrandingService {
   }
 }
 
+/**
+ * In-memory TrafficEstimator. Domains normalise like the real service (scheme, path and "www."
+ * dropped, lower-cased); inputs without a dot or containing "invalid" are rejected. A submitted
+ * domain stays pending until `finish()`, or until it has been read `autoFinishAfterGets` times.
+ */
+export class FakeTraffic implements TrafficEstimator {
+  states = new Map<string, TrafficState>();
+  reads = new Map<string, number>();
+  submissions: Array<{ domains: string[]; refresh: boolean }> = [];
+  autoFinishAfterGets = Infinity;
+  available = true;
+
+  static estimate(visits = 18_256): TrafficEstimate {
+    return {
+      estimated_monthly_visits: visits,
+      lower_bound: Math.round(visits / 5),
+      upper_bound: visits * 5,
+      traffic_bucket: visits < 1000 ? "<1K" : visits < 10_000 ? "1K-10K" : visits < 100_000 ? "10K-100K" : "100K-1M",
+      confidence: "high",
+      confidence_score: 0.81,
+      model_version: "heuristic_v2",
+      generated_at: "2026-10-01T12:00:00.000Z",
+    };
+  }
+
+  static normalize(input: string): string | null {
+    const host = input.trim().toLowerCase().replace(/^https?:\/\//, "").split("/")[0]!.replace(/^www\./, "");
+    return host.includes(".") && !host.includes("invalid") ? host : null;
+  }
+
+  async submit(domains: string[], refresh: boolean): Promise<TrafficSubmission[]> {
+    this.check();
+    this.submissions.push({ domains, refresh });
+    const seen = new Set<string>();
+    return domains.map((input) => {
+      const domain = FakeTraffic.normalize(input);
+      if (!domain) return { input, domain: null, status: "invalid", error: "not a registrable domain" };
+      if (seen.has(domain)) return { input, domain, status: "duplicate", error: null };
+      seen.add(domain);
+      const cur = this.states.get(domain);
+      if (cur?.run && (cur.run.status === "queued" || cur.run.status === "running")) return { input, domain, status: "existing", error: null };
+      if (cur?.estimate && !refresh) return { input, domain, status: "recent", error: null };
+      this.states.set(domain, { domain, estimate: cur?.estimate ?? null, run: { status: "queued", error: null, created_at: new Date().toISOString(), finished_at: null } });
+      this.reads.set(domain, 0);
+      return { input, domain, status: "queued", error: null };
+    });
+  }
+
+  async get(domain: string, details: boolean): Promise<TrafficState | null> {
+    this.check();
+    const d = FakeTraffic.normalize(domain);
+    if (!d) throw new AppError("INVALID_DOMAIN", "Invalid domain: not a registrable domain");
+    const n = (this.reads.get(d) ?? 0) + 1;
+    this.reads.set(d, n);
+    if (n >= this.autoFinishAfterGets && this.states.get(d)?.run?.status === "queued") this.finish(d);
+    const s = this.states.get(d);
+    if (!s) return null;
+    return { ...s, estimate: s.estimate && details ? { ...s.estimate, details: { signal_estimates_log10: { tranco: 4.2 } } } : s.estimate };
+  }
+
+  finish(domain: string, visits = 18_256) {
+    const s = this.states.get(domain)!;
+    s.run = { ...s.run!, status: "completed", finished_at: new Date().toISOString() };
+    s.estimate = FakeTraffic.estimate(visits);
+  }
+
+  fail(domain: string, error = "all collectors failed") {
+    const s = this.states.get(domain)!;
+    s.run = { ...s.run!, status: "failed", error, finished_at: new Date().toISOString() };
+  }
+
+  private check() {
+    if (!this.available) throw new AppError("TRAFFIC_UNAVAILABLE", "The traffic estimator is not reachable; retry shortly");
+  }
+}
+
 export interface TestContext {
   app: FastifyInstance;
   db: Db;
   engine: FakeEngine;
   branding: FakeBranding;
+  traffic: FakeTraffic;
   storage: MemoryStorage;
   metrics: InMemoryMetrics;
   config: AppConfig;
@@ -181,6 +260,7 @@ export function testConfig(overrides: Partial<AppConfig> = {}): AppConfig {
     allowSignup: true,
     firecrawl: { apiUrl: "http://unused", apiKey: "x", requestTimeoutMs: 1000, userAgent: "test" },
     branding: { serviceUrl: "http://unused", timeoutMs: 1000 },
+    traffic: { serviceUrl: "http://unused", timeoutMs: 1000, waitMs: 5000 },
     storage: { driver: "local", localDir: "/tmp/unused" },
     urlPolicy: createPolicyConfig(),
     limits: {
@@ -214,9 +294,10 @@ export async function setup(overrides: Partial<AppConfig> = {}): Promise<TestCon
   const storage = new MemoryStorage();
   const metrics = new InMemoryMetrics();
   const branding = new FakeBranding();
-  const app = await buildApp({ config, db, engine, branding, storage, metrics, resolver: fakeResolver });
+  const traffic = new FakeTraffic();
+  const app = await buildApp({ config, db, engine, branding, traffic, storage, metrics, resolver: fakeResolver });
   await app.ready();
-  return { app, db, engine, branding, storage, metrics, config };
+  return { app, db, engine, branding, traffic, storage, metrics, config };
 }
 
 export async function teardown(ctx: TestContext) {

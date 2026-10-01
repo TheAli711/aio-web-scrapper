@@ -121,6 +121,8 @@ services:
       DATABASE_URL: postgres://${APP_DB_USER:-webscraper}:${APP_DB_PASSWORD:-webscraper}@app-db:5432/${APP_DB_NAME:-webscraper}
       FIRECRAWL_API_URL: http://api:3002
       BRAND_SERVICE_URL: http://brand-service:4100
+      # /api/v1/traffic proxies to the internal traffic estimator (unset: those endpoints answer 503).
+      TRAFFIC_API_URL: http://traffic-api:4200
       STORAGE_LOCAL_DIR: /data/objects
       APP_ORIGIN: ${APP_ORIGIN:-http://localhost:3000}
       COOKIE_SECURE: ${COOKIE_SECURE:-false}

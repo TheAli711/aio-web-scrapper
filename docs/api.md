@@ -38,6 +38,9 @@ Authorization: Bearer wsk_XXXXXXXX_XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX
 | GET | `/jobs/{id}/export` | All results with content, `format=jsonl` (default) or `json` |
 | GET | `/results/{id}` | One result with content |
 | GET | `/results/{id}/download` | `format=markdown|html|text|json`, as an attachment |
+| POST | `/traffic` | Estimate a website's monthly visits → `200` (ready) or `202` (being computed) |
+| GET | `/traffic/{domain}` | Latest traffic estimate for a domain |
+| POST | `/traffic/bulk` | Estimate up to 100 websites at once → `202` |
 
 Jobs are asynchronous: create, poll `GET /jobs/{id}` until `status` is `completed`, `failed` or
 `cancelled`, then read results. Crawl results appear while the crawl is still running.
@@ -167,6 +170,78 @@ the pattern and domain fields work as for `/crawl`. Response **200**:
 sitemap entries and the start page's links, deduplicated. If the start page can't be loaded
 and nothing else is found, the response is an error (`TIMEOUT`, `CONNECTION_FAILED`, ...).
 
+### Traffic estimates
+
+Monthly visits for a website, **estimated** from public signals: popularity rankings (Tranco, the
+Chrome UX Report top list, Majestic, Open PageRank), the Common Crawl link graph, a short crawl of
+the site (sitemaps, technologies) and DNS. It is not measured traffic: nobody's analytics are read.
+Use the range and the bucket; the point estimate is an order of magnitude. Estimates are per
+registrable domain, shared by all API users, and reused for 7 days.
+
+#### POST /traffic
+
+```json
+{ "domain": "example.com", "refresh": false }
+```
+
+| Field / query | Default | Notes |
+|---|---|---|
+| `domain` | required | A domain or URL. Reduced to the registrable domain: `https://www.shop.example.co.uk/x` → `example.co.uk` (subdomains count towards their parent). |
+| `refresh` | `false` | `true` collects fresh data even if the domain was estimated in the last 7 days. |
+| `?wait=true` | `false` | Block until the estimate is ready, up to 60 s (`TRAFFIC_WAIT_MS`). |
+| `?details=true` | `false` | Add `estimate.details`, the per-signal breakdown (diagnostic; its shape may change). |
+
+Returns `200` with the estimate when it is ready, or `202` (with a `Location` header) while it is
+being computed: poll `GET /traffic/{domain}` every few seconds. A domain estimated in the last 7
+days answers at once; a new one takes 10–30 s (the site is crawled politely).
+
+```json
+{
+  "domain": "example.com",
+  "status": "ready",
+  "refreshing": false,
+  "estimate": {
+    "estimated_monthly_visits": 18256,
+    "lower_bound": 3263,
+    "upper_bound": 102153,
+    "traffic_bucket": "10K-100K",
+    "confidence": "high",
+    "confidence_score": 0.88,
+    "model_version": "heuristic_v2",
+    "generated_at": "2026-10-01T12:17:58.272Z"
+  },
+  "error": null,
+  "disclaimer": "Estimated from public signals (popularity rankings, link graphs, our crawl and DNS); not measured traffic.",
+  "links": { "self": "/api/v1/traffic/example.com" }
+}
+```
+
+| Field | Meaning |
+|---|---|
+| `status` | `pending` (no estimate yet), `ready` (`estimate` is set) or `failed` (no estimate could be made; `error` says why, code `ESTIMATION_FAILED`) |
+| `refreshing` | `true` while a newer estimate is computed; `estimate` is still the previous one |
+| `estimated_monthly_visits` | Point estimate of visits per month, worldwide, all devices |
+| `lower_bound`, `upper_bound` | Plausible range (at least ×3 either side of the estimate; wider when evidence is thin or the signals disagree) |
+| `traffic_bucket` | `<1K`, `1K-10K`, `10K-100K`, `100K-1M`, `1M-10M` or `10M+` |
+| `confidence`, `confidence_score` | How much evidence backs the estimate (`high` ≥ 0.70, `medium` ≥ 0.40, else `low`), not how large it is |
+| `model_version` | Estimator that produced the number; changes when the method changes |
+
+#### GET /traffic/{domain}
+
+The latest estimate for a domain requested earlier (by anyone), same shape as above, always `200`.
+`404 NOT_FOUND` if the domain was never requested. `?details=true` as above.
+
+#### POST /traffic/bulk
+
+```json
+{ "domains": ["example.com", "shop.example.org", "https://www.example.net/about"], "refresh": false }
+```
+
+Up to 100 domains. Answers at once with `202` and one item per input, in order: domains estimated
+in the last 7 days come back `ready` with their estimate, new ones `pending` (poll each
+`links.self`), unusable input `invalid` (`error.code = INVALID_DOMAIN`, `domain` and `links`
+null). Each item is the object above plus `input`; `disclaimer` is given once at the top level.
+
 ### Job
 
 ```json
@@ -232,6 +307,7 @@ Every error has the same shape:
 | `UNSUPPORTED_URL` | 400 | Non-http(s) scheme, embedded credentials, unsupported content |
 | `BLOCKED_URL` | 400 | Target is private/internal/metadata, port not allowed, or a redirect went there |
 | `LIMIT_EXCEEDED` | 400 | Option above server limit (`details.field`, `details.max`) |
+| `INVALID_DOMAIN` | 400 | Traffic: the input is not a registrable public domain |
 | `DNS_RESOLUTION_FAILED` | 422 | Hostname does not resolve |
 | `UNAUTHENTICATED` / `INVALID_API_KEY` | 401 | Missing / invalid credentials |
 | `FORBIDDEN` | 403 | Credential type not allowed here, or cross-origin cookie request |
@@ -239,6 +315,7 @@ Every error has the same shape:
 | `JOB_NOT_CANCELLABLE` | 409 | Job already terminal |
 | `RATE_LIMITED` | 429 | See `Retry-After` and `details.retryAfterSeconds` |
 | `TOO_MANY_ACTIVE_JOBS` | 429 | Per-user queued+running cap reached |
+| `TRAFFIC_UNAVAILABLE` | 503 | Traffic estimator unreachable or not enabled on this server; retry later |
 | `INTERNAL_ERROR` | 500 | Unexpected; quote `requestId` |
 
 Codes that appear on failed **jobs** and **results**: `TIMEOUT`, `HTTP_ERROR`,
@@ -248,5 +325,6 @@ Codes that appear on failed **jobs** and **results**: `TIMEOUT`, `HTTP_ERROR`,
 ## Rate limits
 
 Per API key: `RATE_LIMIT_PER_MINUTE` (default 300) overall, and `RATE_LIMIT_JOB_CREATE_PER_MINUTE`
-(default 30) for `POST /scrape`, `POST /crawl` and `POST /map`. Responses carry `x-ratelimit-limit`,
+(default 30) on each of `POST /scrape`, `POST /crawl`, `POST /map`, `POST /traffic` and `POST /traffic/bulk`
+(counted per endpoint). Responses carry `x-ratelimit-limit`,
 `x-ratelimit-remaining` and `x-ratelimit-reset`; a `429` carries `retry-after`.
