@@ -16,6 +16,10 @@ push does not deploy anything: trigger each service's deploy with `POST /v1/serv
 | `webscrapper-rabbitmq`     | private service | image `rabbitmq:3-management`                        | starter  |
 | `webscrapper-egress-proxy` | private service | `apps/egress-proxy/Dockerfile`                       | starter  |
 | `webscrapper-brand`        | private service | `apps/brand-service/Dockerfile`                      | standard |
+| `webscrapper-traffic-db`   | Postgres 16     | managed, 15 GB                                       | basic_1gb |
+| `webscrapper-traffic-api`  | private service | `apps/traffic-estimator/Dockerfile` (context `apps/traffic-estimator`) | starter |
+| `webscrapper-traffic-worker` | background worker | same image, `python -m traffic_estimator worker`, disk `/data/traffic` 15 GB | standard |
+| `webscrapper-traffic-scheduler` | background worker | same image, `python -m traffic_estimator scheduler` | starter |
 
 Only `webscrapper-web` is public; everything else is reachable only on the environment's private
 network (`<service-slug>:<port>`). The environment variables mirror `docker-compose.yml`.
@@ -39,18 +43,22 @@ direct connection.
 ## Traffic estimates
 
 `/api/v1/traffic` on `webscrapper-api` calls the traffic estimator (`apps/traffic-estimator`) over
-the private network. Set on `webscrapper-api`:
+the private network: `TRAFFIC_API_URL=http://webscrapper-traffic-api:4200` (unset: the endpoints
+answer `503 TRAFFIC_UNAVAILABLE`). `TRAFFIC_WAIT_MS` (default 60000) caps `?wait=true`.
 
-| Variable | Value |
-|---|---|
-| `TRAFFIC_API_URL` | `http://<traffic-api service slug>:4200` |
-| `TRAFFIC_WAIT_MS` | optional, default `60000` (cap for `POST /traffic?wait=true`) |
+The three estimator services share one image and these variables: `TE_DATABASE_URL` (the
+`webscrapper-traffic-db` internal connection string with the `postgresql+psycopg://` scheme),
+`TE_DATA_DIR=/data/traffic`, `TE_HTTP_PROXY=http://webscrapper-egress-proxy:3128` with
+`TE_HTTP_PROXY_USERNAME`/`TE_HTTP_PROXY_PASSWORD` (the proxy's `PROXY_USERNAME`/`PROXY_PASSWORD`;
+the crawler fetches user-supplied domains, so it must go through the SSRF-enforcing proxy),
+`TE_ENABLED_COLLECTORS=["lists","crawl","dns"]`, `TE_LIST_PROVIDERS`, `TE_WORKER_CONCURRENCY=8`,
+`TE_CRAWL_PAGES=15`, `TE_LOG_LEVEL=info`. `TE_MIGRATE_ON_START` is `true` on the API only, so
+deploy the API before the worker and scheduler on a fresh database.
 
-Unset, the endpoints answer `503 TRAFFIC_UNAVAILABLE` ("not enabled on this server"). The
-estimator itself is not deployed on Render yet. It needs its own API (private service), worker
-(background worker with a disk of at least 10 GB for the ranked lists and the web-graph index),
-scheduler and Postgres, with the `TE_*` variables from `docker-compose.yml`; the worker reaches
-the internet through `webscrapper-egress-proxy` (`TE_HTTP_PROXY`).
+The worker and scheduler commands start with `/app/docker-entrypoint.sh`: it chowns the
+root-owned disk, then runs the process as `app`. On a fresh disk the scheduler queues all list
+downloads (~2.8 GB, through the egress proxy) and the worker builds the web-graph index; domains
+submitted meanwhile wait (`lists` tasks defer) and complete once the lists are in.
 
 ## Accounts
 
