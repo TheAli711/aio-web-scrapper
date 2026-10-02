@@ -14,6 +14,7 @@ RUN uv sync --locked --no-dev
 
 ENV PATH="/app/.venv/bin:$PATH"
 RUN useradd -r -u 1001 -d /app -s /usr/sbin/nologin app && mkdir -p /data/traffic && chown -R app:app /app /data
-USER app
+# Starts as root, fixes the data dir's ownership (persistent disks), then runs as "app".
+ENTRYPOINT ["/app/docker-entrypoint.sh"]
 EXPOSE 4200
 CMD ["python", "-m", "traffic_estimator", "api"]
